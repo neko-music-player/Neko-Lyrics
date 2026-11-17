@@ -272,43 +272,6 @@ final class Library: ObservableObject {
         return rows.map { $0.id }
     }
 
-    /// Plays an album from its first song, in album order (replaces the queue, like playing it in Music does).
-    func playAlbum(_ album: Album) {
-        guard album.local else { openAlbum(album); return }
-        Task { [weak self] in
-            guard let self else { return }
-            let ids: [String] = await self.albumIDs(album)
-            if ids.isEmpty { self.notice("No songs found for that album"); return }
-            if !self.usePlaylists {
-                let src = "tell application \"Music\" to play (first track of library playlist 1 whose persistent ID is \"\(Script.quote(ids[0]))\")"
-                let r = Script.runChecked(src)
-                self.notice(r.error.map { "Couldn't play: " + $0 } ?? "Playing \(album.name) (first song only, playlists are off)")
-                return
-            }
-            let list: String = ids.map { "\"\(Script.quote($0))\"" }.joined(separator: ", ")
-            let src = """
-            tell application "Music"
-                set wlName to "Neko Lyrics Album"
-                if not (exists user playlist wlName) then make new user playlist with properties {name:wlName}
-                set wlP to user playlist wlName
-                try
-                    delete (every track of wlP)
-                end try
-                repeat with wlID in {\(list)}
-                    try
-                        duplicate (first track of library playlist 1 whose persistent ID is (wlID as text)) to wlP
-                    end try
-                end repeat
-                play wlP
-            end tell
-            """
-            let r = Script.runChecked(src)
-            self.notice(r.error.map { "Couldn't play: " + $0 } ?? "Playing \(album.name)")
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            self.refreshQueue()
-        }
-    }
-
     /// Covers are loaded one at a time (newest request first, so the cover you are looking at wins) and
     /// shrunk to thumbnails. Parallel AppleScript calls were what made scrolling stutter.
     func ensureArt(_ album: Album) {
@@ -447,10 +410,6 @@ final class Library: ObservableObject {
     @Published var openedAlbum: Album?
     @Published var albumTracks: [SongHit] = []
     @Published var queueNotice = ""
-    /// Music's scripting has no "Up Next", so queueing and album play use two helper playlists. Off = no playlists are made.
-    @Published var usePlaylists: Bool = UserDefaults.standard.object(forKey: "usePlaylists") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(usePlaylists, forKey: "usePlaylists") }
-    }
     private var noticeTask: Task<Void, Never>?
 
     private func notice(_ text: String) {
@@ -500,126 +459,12 @@ final class Library: ObservableObject {
         }
     }
 
-    /// Adds a whole album to the queue straight from the cover (no need to open it first).
-    func addAlbumToQueue(_ album: Album, next: Bool = true) {
-        guard album.local else { openAlbum(album); return }
-        Task { [weak self] in
-            guard let self else { return }
-            let ids: [String] = await self.albumIDs(album)
-            if ids.isEmpty { self.notice("No songs found for that album"); return }
-            self.addToQueue(ids, next: next)
-        }
-    }
-
     func closeAlbum() { openedAlbum = nil; albumTracks = [] }
-
-    /// Adds songs to the queue WITHOUT replacing it: right after the current song (`next`) or at the end.
-    /// The Music app has no "Up Next" in its scripting, so the first time the rest of the current list is
-    /// copied into a playlist called "Neko Lyrics Queue" (playback carries on from the same spot) and
-    /// later songs are inserted into that playlist.
-    func addToQueue(_ persistentIDs: [String], next: Bool = true) {
-        guard !persistentIDs.isEmpty else { return }
-        if !usePlaylists { notice("Queueing needs a helper playlist: turn it on in Settings"); return }
-        let list: String = persistentIDs.map { "\"\(Script.quote($0))\"" }.joined(separator: ", ")
-        let nextFlag: String = next ? "true" : "false"
-        let src = """
-        tell application "Music"
-            try
-                set wlName to "Neko Lyrics Queue"
-                if not (exists user playlist wlName) then make new user playlist with properties {name:wlName}
-                set wlQ to user playlist wlName
-                set wlIn to false
-                try
-                    if (name of current playlist) is wlName then set wlIn to true
-                end try
-                set wlNote to "Added to your queue"
-                if not wlIn then
-                    try
-                        set wlCur to current track
-                        set wlPos to player position
-                        set wlPl to current playlist
-                        set wlIdx to index of wlCur
-                        set wlTotal to count of tracks of wlPl
-                        set wlStop to wlIdx + 59
-                        if wlStop > wlTotal then set wlStop to wlTotal
-                        try
-                            delete (every track of wlQ)
-                        end try
-                        repeat with i from wlIdx to wlStop
-                            duplicate (track i of wlPl) to wlQ
-                        end repeat
-                        play (track 1 of wlQ)
-                        set player position to wlPos
-                    on error wlErr
-                        set wlNote to "Added to the Neko Lyrics Queue playlist (could not continue the current list: " & wlErr & ")"
-                    end try
-                end if
-                set wlCount to count of tracks of wlQ
-                set wlHere to 0
-                try
-                    set wlHere to index of current track
-                end try
-                repeat with wlID in {\(list)}
-                    try
-                        set wlT to first track of library playlist 1 whose persistent ID is (wlID as text)
-                        duplicate wlT to wlQ
-                    end try
-                end repeat
-                if \(nextFlag) and wlHere > 0 and wlCount > wlHere then
-                    -- move the old tail behind the new songs: copy it to the end, then delete the original
-                    repeat with i from (wlHere + 1) to wlCount
-                        duplicate (track i of wlQ) to wlQ
-                    end repeat
-                    repeat with i from wlCount to (wlHere + 1) by -1
-                        delete (track i of wlQ)
-                    end repeat
-                end if
-                try
-                    if player state is stopped then play (track 1 of wlQ)
-                end try
-                return wlNote
-            on error wlMsg
-                return "ERR: " & wlMsg
-            end try
-        end tell
-        """
-        Task { [weak self] in
-            guard let self else { return }
-            let r = Script.runChecked(src)
-            if let err = r.error {
-                self.notice("Couldn't add: " + err)
-            } else if r.text.hasPrefix("ERR:") {
-                self.notice("Couldn't add: " + r.text.dropFirst(4))
-            } else {
-                self.notice(next ? r.text.replacingOccurrences(of: "Added to your queue", with: "Playing next") : r.text)
-            }
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            self.refreshQueue()
-        }
-    }
-
-    /// Deletes the two helper playlists (the songs themselves stay in your library). Stops playback only if it was playing from one.
-    func removeHelperPlaylists() {
-        let src = """
-        tell application "Music"
-            repeat with wlName in {"Neko Lyrics Queue", "Neko Lyrics Album"}
-                try
-                    if (name of current playlist) is (wlName as text) then stop
-                end try
-                try
-                    delete user playlist (wlName as text)
-                end try
-            end repeat
-        end tell
-        """
-        let r = Script.runChecked(src)
-        notice(r.error.map { "Couldn't remove: " + $0 } ?? "Helper playlists removed")
-    }
 
     func playLocal(persistentID: String) {
         let src = "tell application \"Music\" to play (first track of library playlist 1 whose persistent ID is \"\(Script.quote(persistentID))\")"
         let r = Script.runChecked(src)
-        if let err = r.error { notice("Couldn't play: " + err) }
+        if let err = r.error { notice("Couldn't play: " + err) } else { notice("Playing now — Music replaced what was coming up") }
     }
 
     func clearSearch() {

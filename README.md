@@ -73,8 +73,7 @@ dragging, live wallpaper, clock, Dock icon, lock-screen options and the lock-scr
 
 - **Album browser** — your own library's albums, artist's albums first. Drag, two-finger swipe or mouse wheel to glide; click
   the middle cover to see its songs.
-- **Queue without clearing it** — click a song to play it *next*; right-click for *Add to end of queue* or *Play now*.
-  See [Queue](#queue-how-it-works).
+- **Play a song** — click a song in the list or search results to play it. (Apple Music cannot be queued from outside, so there is no "play next" / "add to queue".)
 - **Search** — searches your Music library (switch the album source to *Store* for the online catalogue). Not available
   on the lock screen, because macOS gives other apps no keyboard there.
 - **Player bar** — shuffle, previous, play/pause, next, repeat, a scrubbable progress bar, lyrics on/off, queue on/off, volume.
@@ -117,13 +116,10 @@ Not every song is in every source. If nothing is found, use **Change** to search
 scripts into Latin letters, using macOS's own transliteration. It is a best effort: Japanese particles and kanji
 readings can be off, and Chinese comes out as pinyin. It does not look for separately written romaji lyrics online.
 
-## Queue: how it works
+## Queue
 
-The Music app's scripting cannot edit Up Next, and any "play" replaces it. So the first time you add a song, Neko Lyrics
-copies the rest of what is playing (up to about 100 songs) into a playlist called **Neko Lyrics Queue**, carries on playing
-from the same spot, and inserts later songs into that playlist (next, or at the end). You will see that playlist in Music's
-sidebar; delete it any time. Playback may skip for a moment on the first add. If what is playing is streamed from Apple
-Music and cannot be copied, you get a message saying so.
+The Music app's scripting cannot edit Up Next, so Neko Lyrics does not try. The queue panel only shows what is coming up in
+the current list; clicking a song plays it.
 
 ## Safety switches
 
@@ -206,3 +202,9 @@ catalogue and LRCLIB are third-party services with their own terms. The logo is 
 
 ## v1.4.7
 - The edge-light / lyrics overlay sits below the menu bar (above it only on the lock screen), so the menu-bar icon and settings are always reachable while the player is on.
+
+## v1.5.0
+- Removed "Play next", "Add to queue", "Play album" and the helper playlists. Apple Music cannot be queued from outside (its scripting has no Up Next), and the playlist workaround was unreliable. Clicking a song now simply plays it; albums open as a song list; "Show in Music" opens the album in Music.
+
+## v1.5.1
+- Player window buttons are one faint circle (top right) that opens on hover into: lyrics on/off, controls on/off, album browser on/off, drag lock, minimise, quit. It fades back after you move away.

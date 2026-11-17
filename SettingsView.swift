@@ -389,7 +389,6 @@ struct SettingsView: View {
         Toggle("Show music controls, search and queue (desktop and lock screen)", isOn: $engine.showControls)
         Toggle("Album browser on the desktop player", isOn: $engine.showAlbumBrowser)
         Toggle("Album browser on the lock screen", isOn: $engine.lockAlbumBrowser)
-        PlaylistOptions(library: engine.library)
 
         Divider()
         Toggle("Only on lock screen", isOn: $engine.lockedOnly)
@@ -569,15 +568,3 @@ struct SwatchRow: View {
     }
 }
 
-struct PlaylistOptions: View {
-    @ObservedObject var library: Library
-
-    var body: some View {
-        Toggle("Use helper playlists for queue and Play album", isOn: $library.usePlaylists)
-        Text("Apple Music can't be queued from outside, so Neko Lyrics fills two playlists named \"Neko Lyrics Queue\" and \"Neko Lyrics Album\". Off: no playlists, Play album plays the first song only.")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        Button("Delete the helper playlists") { library.removeHelperPlaylists() }
-            .font(.caption)
-    }
-}

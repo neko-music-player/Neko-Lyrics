@@ -344,51 +344,8 @@ struct DesktopPlayerView: View {
         .foregroundColor(.white)
         .environment(\.colorScheme, .dark)
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: 8) {
-                Button { withAnimation(.easeInOut(duration: 0.25)) { engine.showControls.toggle() } } label: {
-                    Image(systemName: engine.showControls ? "slider.horizontal.below.rectangle" : "slider.horizontal.3")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 28, height: 28)
-                        .glass(14)
-                }
-                .buttonStyle(.plain)
-                .help(engine.showControls ? "Hide the music controls" : "Show the music controls")
-                Button {
-                    if engine.isLocked { engine.lockAlbumBrowser.toggle() } else { engine.showAlbumBrowser.toggle() }
-                } label: {
-                    Image(systemName: browserAllowed ? "rectangle.stack.fill" : "rectangle.stack")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 28, height: 28)
-                        .glass(14)
-                }
-                .buttonStyle(.plain)
-                .help(browserAllowed ? "Hide the album browser" : "Show the album browser")
-                Button { engine.playerDraggable.toggle() } label: {
-                    Image(systemName: engine.playerDraggable ? "hand.draw.fill" : "hand.draw")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 28, height: 28)
-                        .glass(14)
-                }
-                .buttonStyle(.plain)
-                .help("Allow dragging the player")
-                Button { engine.playerOpen = false } label: {
-                    Image(systemName: "arrow.down.right.and.arrow.up.left")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 28, height: 28)
-                        .glass(14)
-                }
-                .buttonStyle(.plain)
-                .help("Close the player")
-                Button { NSApplication.shared.terminate(nil) } label: {
-                    Image(systemName: "power")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 28, height: 28)
-                        .glass(14)
-                }
-                .buttonStyle(.plain)
-                .help("Quit Neko Lyrics")
-            }
-            .padding(12)
+            ControlDock(engine: engine, browserAllowed: browserAllowed)
+                .padding(12)
         }
     }
 
@@ -445,13 +402,10 @@ struct DesktopPlayerView: View {
                         .help("Show different albums")
                     }
                 }
-                if !lib.queueNotice.isEmpty { Text(lib.queueNotice).font(.caption).opacity(0.8) }
                 CoverFlow(albums: lib.albums, center: $lib.center, art: lib.localArt,
                           need: { lib.ensureArt($0) },
                           open: { lib.showAlbum($0) },
-                          play: { lib.playAlbum($0) },
-                          reveal: { lib.openAlbum($0) },
-                          queue: { lib.addAlbumToQueue($0, next: $1) })
+                          reveal: { lib.openAlbum($0) })
             }
         }
     }
@@ -536,8 +490,7 @@ private struct SearchResults: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(lib.albumSource == .library ? "Your library" : "Top Songs").font(.headline)
-            if !lib.queueNotice.isEmpty { Text(lib.queueNotice).font(.caption).opacity(0.8) }
-            else if lib.albumSource == .library { Text("Click plays next · right-click for more").font(.caption2).opacity(0.5) }
+            if lib.albumSource == .library { Text("Playing a song starts it right away and replaces what was coming up (Apple Music can't add to the queue from here)").font(.caption2).opacity(0.5) }
             if lib.searching {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -559,7 +512,7 @@ private struct SearchResults: View {
 
     private func row(_ hit: SongHit) -> some View {
         Button {
-            if let pid = hit.persistentID { lib.addToQueue([pid]) } else {
+            if let pid = hit.persistentID { lib.playLocal(persistentID: pid) } else {
                 lib.open(link: hit.link, searchText: hit.title + " " + hit.artist)
             }
         } label: {
@@ -587,17 +540,10 @@ private struct SearchResults: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            if let pid = hit.persistentID {
-                Button("Play next") { lib.addToQueue([pid]) }
-                Button("Add to end of queue") { lib.addToQueue([pid], next: false) }
-                Button("Play now (replaces queue)") { lib.playLocal(persistentID: pid) }
-            }
-        }
     }
 }
 
-/// One album as a list of songs. Tapping a song adds it to the queue instead of replacing the queue.
+/// One album as a list of songs. Tapping a song plays it.
 private struct AlbumSongs: View {
     @ObservedObject var lib: Library
     let album: Album
@@ -623,18 +569,9 @@ private struct AlbumSongs: View {
                         .font(.system(size: 12)).opacity(0.65).lineLimit(1)
                 }
                 Spacer()
-                Button { lib.addToQueue(lib.albumTracks.compactMap { $0.persistentID }) } label: {
-                    Label("Play album next", systemImage: "text.insert")
-                        .font(.system(size: 12, weight: .semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .glass(14)
-                }
-                .buttonStyle(.plain)
             }
-            if !lib.queueNotice.isEmpty {
-                Text(lib.queueNotice).font(.caption).opacity(0.8)
-            }
+            Text(lib.queueNotice.isEmpty ? "Playing a song starts it right away and replaces what was coming up" : lib.queueNotice)
+                .font(.caption2).opacity(0.55)
             if lib.albumTracks.isEmpty {
                 ProgressView().controlSize(.small)
             }
@@ -642,7 +579,7 @@ private struct AlbumSongs: View {
                 LazyVStack(spacing: 2) {
                     ForEach(Array(lib.albumTracks.enumerated()), id: \.element.id) { n, song in
                         Button {
-                            if let pid = song.persistentID { lib.addToQueue([pid]) }
+                            if let pid = song.persistentID { lib.playLocal(persistentID: pid) }
                         } label: {
                             HStack(spacing: 10) {
                                 Text(String(n + 1)).font(.system(size: 12)).opacity(0.5).frame(width: 24)
@@ -651,20 +588,13 @@ private struct AlbumSongs: View {
                                     Text(song.artist).font(.system(size: 11)).opacity(0.6).lineLimit(1)
                                 }
                                 Spacer()
-                                Image(systemName: "plus.circle").opacity(0.7)
+                                Label("Play now", systemImage: "play.circle").font(.system(size: 11)).opacity(0.7)
                             }
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .contextMenu {
-                            if let pid = song.persistentID {
-                                Button("Play next") { lib.addToQueue([pid]) }
-                                Button("Add to end of queue") { lib.addToQueue([pid], next: false) }
-                                Button("Play now (replaces queue)") { lib.playLocal(persistentID: pid) }
-                            }
-                        }
                     }
                 }
             }
@@ -683,9 +613,7 @@ struct CoverFlow: View {
     let art: [String: NSImage]
     let need: (Album) -> Void
     let open: (Album) -> Void
-    var play: (Album) -> Void = { _ in }
     var reveal: (Album) -> Void = { _ in }
-    var queue: (Album, Bool) -> Void = { _, _ in }
 
     /// While you scroll or drag the position is fractional, so the covers glide; it settles on a whole cover after.
     @State private var live: Double? = nil
@@ -710,11 +638,8 @@ struct CoverFlow: View {
                                  width: g.size.width, current: abs(d) < 0.5)
                             .onTapGesture { tap(i) }
                             .contextMenu {
-                                Button("Play album next") { queue(albums[i], true) }
-                                Button("Add album to end of queue") { queue(albums[i], false) }
                                 Button("Show songs") { open(albums[i]) }
-                                Button("Show in Music (keeps your queue)") { reveal(albums[i]) }
-                                Button("Play album now (replaces queue)") { play(albums[i]) }
+                                Button("Show in Music") { reveal(albums[i]) }
                             }
                             .onAppear { need(albums[i]) }
                     }
@@ -1037,4 +962,85 @@ private struct PlayerStage: View {
 /// (on the lock screen the player never becomes active, so sliders and buttons need this).
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+
+// MARK: - Window controls: a quiet circle that opens into a row of buttons on hover
+
+struct ControlDock: View {
+    @ObservedObject var engine: Engine
+    let browserAllowed: Bool
+    @State private var open = false
+    @State private var hovering = false
+    @State private var closeTask: Task<Void, Never>?
+
+    private struct Item: Identifiable {
+        let id: String
+        let icon: String
+        let help: String
+        let on: Bool
+        let action: () -> Void
+    }
+
+    private var items: [Item] {
+        [
+            Item(id: "lyrics", icon: "text.quote", help: engine.playerShowsLyrics ? "Hide lyrics in the player" : "Show lyrics in the player",
+                 on: engine.playerShowsLyrics) { engine.playerShowsLyrics.toggle() },
+            Item(id: "controls", icon: "slider.horizontal.3", help: engine.showControls ? "Hide music controls" : "Show music controls",
+                 on: engine.showControls) { engine.showControls.toggle() },
+            Item(id: "albums", icon: "rectangle.stack", help: browserAllowed ? "Hide the album browser" : "Show the album browser",
+                 on: browserAllowed) {
+                if engine.isLocked { engine.lockAlbumBrowser.toggle() } else { engine.showAlbumBrowser.toggle() }
+            },
+            Item(id: "drag", icon: "hand.draw", help: engine.playerDraggable ? "Dragging on (click to lock)" : "Dragging off (click to allow)",
+                 on: engine.playerDraggable) { engine.playerDraggable.toggle() },
+            Item(id: "min", icon: "minus", help: "Minimise the player", on: false) { engine.playerOpen = false },
+            Item(id: "power", icon: "power", help: "Quit Neko Lyrics", on: false) { NSApplication.shared.terminate(nil) }
+        ]
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if open {
+                ForEach(items) { item in
+                    Button(action: item.action) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Color.white.opacity(item.on ? 0.22 : 0)))
+                            .opacity(item.on || item.id == "min" || item.id == "power" ? 1 : 0.6)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.help)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            Image(systemName: open ? "chevron.right" : "ellipsis")
+                .font(.system(size: 11, weight: .bold))
+                .frame(width: 28, height: 28)
+                .contentShape(Circle())
+                .onTapGesture { setOpen(!open) }
+        }
+        .padding(3)
+        .glass(20)
+        .opacity(open || hovering ? 1 : 0.28)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: open)
+        .animation(.easeOut(duration: 0.2), value: hovering)
+        .onHover { inside in
+            hovering = inside
+            closeTask?.cancel()
+            if inside {
+                setOpen(true)
+            } else {
+                closeTask = Task {
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    guard !Task.isCancelled else { return }
+                    setOpen(false)
+                }
+            }
+        }
+    }
+
+    private func setOpen(_ value: Bool) { open = value }
 }
