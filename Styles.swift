@@ -1056,6 +1056,24 @@ struct EdgeLightView: View {
     let glow: Double
     var radius: Double = 14
 
+    /// Only colors that really are colors take part. A black, white or grey has no hue (it reads as "red"), so
+    /// brightening it would give a red glow that has nothing to do with the cover; those are left out.
+    static func glowColors(_ input: [Color]) -> [Color] {
+        var picked: [Color] = []
+        for c in input {
+            let v = c.hsb
+            if v.s > 0.28 && v.b > 0.2 { picked.append(c.vivid) }
+        }
+        if picked.isEmpty {                                  // a black-and-white cover: a soft neutral light
+            return [Color(white: 0.92), Color(white: 0.7), Color(white: 0.92)]
+        }
+        if picked.count == 1 {                               // one color: shades of it, so it still flows
+            let c: Color = picked[0]
+            return [c, c.hueShifted(0.05), c, c.hueShifted(-0.05)]
+        }
+        return picked
+    }
+
     /// 1 at the screen edge, falling smoothly to 0: an eased curve, so there is no visible band or hard edge.
     private func fade(_ strength: Double) -> Gradient {
         var stops: [Gradient.Stop] = []
@@ -1077,7 +1095,7 @@ struct EdgeLightView: View {
     }
 
     var body: some View {
-        let cols: [Color] = colors.isEmpty ? [Color.white] : colors.map { $0.vivid }
+        let cols: [Color] = Self.glowColors(colors)
         let depthBase: Double = 40.0 + thickness * 5.0
         let depth: CGFloat = CGFloat(depthBase * (1.0 + 0.25 * kick))
         let strength: Double = min(1.0, glow * (0.75 + 0.35 * kick))

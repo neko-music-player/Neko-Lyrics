@@ -28,13 +28,13 @@
 Needs macOS 14+ and the Xcode command line tools (`xcode-select --install`).
 
 ```sh
-chmod +x package.sh && ./package.sh      # makes dist/NekoLyrics-<version>.dmg
+chmod +x package.sh && ./package.sh      # makes dist/"Neko Lyrics-<version>.dmg"
 ```
 
 Open the `.dmg` and drag **Neko Lyrics** onto Applications. To try it without installing:
 
 ```sh
-./build.sh && open NekoLyrics.app
+./build.sh && open "Neko Lyrics.app"
 ```
 
 The app is signed ad hoc (fine for your own Mac). The first time, macOS may ask you to open it from
@@ -188,3 +188,21 @@ catalogue and LRCLIB are third-party services with their own terms. The logo is 
 - Backgrounds now work with the player open: the player draws the Background you chose (Transparent, Dim, Color gradient, Album cover, Animated colors, Cover + animated, Full-screen artwork). Before, only the desktop lyrics window drew it, and that window is hidden while the player is open.
 - Random font per song (Look > Font).
 - Edge light redrawn as a soft glow from four eased gradient strips (no blur, no sparks) that always follows the album cover colors, even with Auto Sync off.
+
+## v1.4.4
+- Player is the plain see-through glass panel again (no fixed background painted behind it); backgrounds apply to the full-screen lyrics view.
+- Edge light ignores colors with no hue (black / white / grey read as red before) and uses neutral light for black-and-white covers.
+
+## v1.4.5
+- Lyric / highlight colors are chosen from inline swatches (the system color panel popped up in odd places); picking one turns Auto Sync off.
+- Helper playlists ("Neko Lyrics Queue", "Neko Lyrics Album") can be switched off and deleted from Settings.
+- Constellation: every line gets its own shape (zig-zag, arc, wave, diagonal, scatter, ring) and stars fly in from different directions.
+
+## v1.4.6
+- Lyric / highlight colors: full inline picker (square + hue bar + swatches), no system color panel.
+- Settings are no longer hidden behind the player or overlays (they step down while the menu is open).
+- Background "Transparent" now also keeps the live wallpaper off, so nothing is painted.
+- Big clock has its own window and no longer depends on the wallpaper or playback.
+
+## v1.4.7
+- The edge-light / lyrics overlay sits below the menu bar (above it only on the lock screen), so the menu-bar icon and settings are always reachable while the player is on.

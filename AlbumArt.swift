@@ -145,8 +145,30 @@ extension Color {
     }
 
     /// Same hue, but bright and saturated: for glowing light.
+    /// 0 = grey / black / white, 1 = fully saturated.
+    var saturation: Double {
+        let c: NSColor = NSColor(self).usingColorSpace(.sRGB) ?? NSColor.white
+        return Double(c.saturationComponent)
+    }
+
+    /// Hue / saturation / brightness, each 0...1.
+    var hsb: (h: Double, s: Double, b: Double) {
+        let c: NSColor = NSColor(self).usingColorSpace(.sRGB) ?? NSColor.white
+        return (Double(c.hueComponent), Double(c.saturationComponent), Double(c.brightnessComponent))
+    }
+
+    func hueShifted(_ by: Double) -> Color {
+        let v = hsb
+        var h: Double = v.h + by
+        if h < 0 { h += 1.0 }
+        if h > 1 { h -= 1.0 }
+        return Color(hue: h, saturation: v.s, brightness: v.b)
+    }
+
     var vivid: Color {
         let c: NSColor = NSColor(self).usingColorSpace(.sRGB) ?? NSColor.white
+        // A neutral colour has no hue (it reads as red): leave it alone instead of forcing saturation onto it.
+        if c.saturationComponent < 0.12 { return Color(white: max(Double(c.brightnessComponent), 0.85)) }
         let s: Double = max(Double(c.saturationComponent), 0.6)
         let b: Double = max(Double(c.brightnessComponent), 0.9)
         return Color(hue: Double(c.hueComponent), saturation: s, brightness: b)

@@ -64,6 +64,7 @@ final class Engine: ObservableObject {
     @Published var background: BackdropMode = BackdropMode(rawValue: UserDefaults.standard.string(forKey: "background") ?? "") ?? .gradient {
         didSet {
             UserDefaults.standard.set(background.rawValue, forKey: "background")
+            refresh()
             if needsArtwork, albumImage == nil, let t = track { loadArtwork(for: t) }
         }
     }
@@ -157,7 +158,7 @@ final class Engine: ObservableObject {
         }
     }
     @Published var showClock: Bool = UserDefaults.standard.object(forKey: "showClock") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showClock, forKey: "showClock") }
+        didSet { UserDefaults.standard.set(showClock, forKey: "showClock"); refresh() }
     }
     @Published var dockIcon: Bool = UserDefaults.standard.bool(forKey: "dockIcon") {
         didSet { UserDefaults.standard.set(dockIcon, forKey: "dockIcon"); applyDock() }
@@ -413,6 +414,7 @@ final class Engine: ObservableObject {
 
     init() {
         installKillHotkey()
+        MenuGuard.shared.start()
         monitor.onChange = { [weak self] snap in self?.apply(snap) }
         monitor.start()
 
@@ -861,7 +863,8 @@ final class Engine: ObservableObject {
         let lockUI: Bool = isLocked && track != nil
         if visible || lockUI { overlay.show() } else { overlay.hide() }
         desktop.syncLockPlayer(show: lockUI && showLockPlayer)
-        desktop.syncWallpaper(show: liveWallpaper && isPlaying)
+        desktop.syncWallpaper(show: liveWallpaper && isPlaying && background != .transparent)
+        desktop.syncClock()
         if visible && isPlaying { awake.enable() } else { awake.disable() }
     }
 }

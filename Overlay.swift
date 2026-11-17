@@ -49,6 +49,10 @@ final class OverlayController {
 
         if topFull || engine.edgeLight {
             if top == nil { top = makeWindow(on: screen, role: .top) }
+            // Above every app, but below the menu bar and its pop-ups, so the menu-bar icon and settings stay usable.
+            // Only the lock screen needs the very top.
+            top?.level = engine.isLocked ? NSWindow.Level(rawValue: Int(Int32.max - 2))
+                                         : NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)) - 1)
             top?.setFrame(screen.frame, display: true)
             top?.orderFrontRegardless()
             if let w = top { LockScreenLayer.shared.attach(w) }
@@ -56,7 +60,8 @@ final class OverlayController {
             top?.orderOut(nil)
         }
 
-        let wantsDesk: Bool = !topFull && engine.lyricsEnabled && !engine.lines.isEmpty && !engine.playerOpen
+        // The desktop layer also draws the chosen Background behind the player (the player itself stays see-through).
+        let wantsDesk: Bool = !topFull && ((engine.lyricsEnabled && !engine.lines.isEmpty) || engine.background != .transparent)
         if wantsDesk {
             if desk == nil { desk = makeWindow(on: screen, role: .desk) }
             desk?.setFrame(screen.frame, display: true)
@@ -172,8 +177,11 @@ struct LyricsOverlayView: View {
 
     /// The edge light always follows the album cover when there is one, whatever Auto Sync says.
     private func edgeColors(_ p: Palette) -> [Color] {
-        if let a = engine.albumPalette { return [a.highlight, a.backdropA, a.lyric, a.backdropB] }
-        return p.isAuto ? [p.highlight, p.backdropA, p.lyric, p.backdropB] : [p.highlight, p.lyric, p.highlight]
+        let raw: [Color] = engine.albumPalette.map { [$0.highlight, $0.backdropA, $0.lyric, $0.backdropB] }
+            ?? (p.isAuto ? [p.highlight, p.backdropA, p.lyric, p.backdropB] : [p.highlight, p.lyric, p.highlight])
+        // Grey / black / white parts of a cover have no real colour; using them makes the glow turn red.
+        let coloured: [Color] = raw.filter { $0.saturation > 0.2 }
+        return coloured.isEmpty ? [p.highlight] : coloured
     }
 }
 

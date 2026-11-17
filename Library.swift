@@ -279,6 +279,12 @@ final class Library: ObservableObject {
             guard let self else { return }
             let ids: [String] = await self.albumIDs(album)
             if ids.isEmpty { self.notice("No songs found for that album"); return }
+            if !self.usePlaylists {
+                let src = "tell application \"Music\" to play (first track of library playlist 1 whose persistent ID is \"\(Script.quote(ids[0]))\")"
+                let r = Script.runChecked(src)
+                self.notice(r.error.map { "Couldn't play: " + $0 } ?? "Playing \(album.name) (first song only, playlists are off)")
+                return
+            }
             let list: String = ids.map { "\"\(Script.quote($0))\"" }.joined(separator: ", ")
             let src = """
             tell application "Music"
@@ -441,6 +447,10 @@ final class Library: ObservableObject {
     @Published var openedAlbum: Album?
     @Published var albumTracks: [SongHit] = []
     @Published var queueNotice = ""
+    /// Music's scripting has no "Up Next", so queueing and album play use two helper playlists. Off = no playlists are made.
+    @Published var usePlaylists: Bool = UserDefaults.standard.object(forKey: "usePlaylists") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(usePlaylists, forKey: "usePlaylists") }
+    }
     private var noticeTask: Task<Void, Never>?
 
     private func notice(_ text: String) {
@@ -509,6 +519,7 @@ final class Library: ObservableObject {
     /// later songs are inserted into that playlist.
     func addToQueue(_ persistentIDs: [String], next: Bool = true) {
         guard !persistentIDs.isEmpty else { return }
+        if !usePlaylists { notice("Queueing needs a helper playlist: turn it on in Settings"); return }
         let list: String = persistentIDs.map { "\"\(Script.quote($0))\"" }.joined(separator: ", ")
         let nextFlag: String = next ? "true" : "false"
         let src = """
@@ -585,6 +596,24 @@ final class Library: ObservableObject {
             try? await Task.sleep(nanoseconds: 800_000_000)
             self.refreshQueue()
         }
+    }
+
+    /// Deletes the two helper playlists (the songs themselves stay in your library). Stops playback only if it was playing from one.
+    func removeHelperPlaylists() {
+        let src = """
+        tell application "Music"
+            repeat with wlName in {"Neko Lyrics Queue", "Neko Lyrics Album"}
+                try
+                    if (name of current playlist) is (wlName as text) then stop
+                end try
+                try
+                    delete user playlist (wlName as text)
+                end try
+            end repeat
+        end tell
+        """
+        let r = Script.runChecked(src)
+        notice(r.error.map { "Couldn't remove: " + $0 } ?? "Helper playlists removed")
     }
 
     func playLocal(persistentID: String) {

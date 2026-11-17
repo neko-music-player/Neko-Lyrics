@@ -329,11 +329,13 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        Group {
-            ColorPicker("Lyric (sung words)", selection: $engine.lyricColor)
-            ColorPicker("Highlight (current word)", selection: $engine.highlightColor)
+        if engine.autoSync && engine.albumPalette != nil {
+            Text("Picking a color below turns Auto Sync off.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
-        .disabled(engine.autoSync && engine.albumPalette != nil)
+        SwatchRow(title: "Lyric (sung words)", color: $engine.lyricColor, onPick: { engine.autoSync = false })
+        SwatchRow(title: "Highlight (current word)", color: $engine.highlightColor, onPick: { engine.autoSync = false })
 
         Divider()
         Toggle("Edge light (glowing screen border)", isOn: $engine.edgeLight)
@@ -373,6 +375,11 @@ struct SettingsView: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         Toggle("Live wallpaper while playing", isOn: $engine.liveWallpaper)
+        if engine.liveWallpaper && engine.background == .transparent {
+            Text("Background is Transparent, so the wallpaper stays off. Pick another Background to use it.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
         if engine.liveWallpaper {
             Toggle("Big clock on the wallpaper", isOn: $engine.showClock)
         }
@@ -382,6 +389,7 @@ struct SettingsView: View {
         Toggle("Show music controls, search and queue (desktop and lock screen)", isOn: $engine.showControls)
         Toggle("Album browser on the desktop player", isOn: $engine.showAlbumBrowser)
         Toggle("Album browser on the lock screen", isOn: $engine.lockAlbumBrowser)
+        PlaylistOptions(library: engine.library)
 
         Divider()
         Toggle("Only on lock screen", isOn: $engine.lockedOnly)
@@ -452,5 +460,124 @@ struct LyricsPreview: View {
 
     private func timeLabel(_ t: TimeInterval) -> String {
         String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
+    }
+}
+
+
+/// Inline color picker (saturation/brightness square, hue bar, quick swatches). The system color panel
+/// opens as a floating window in an odd place and closes the menu, so everything is drawn right here.
+struct SwatchRow: View {
+    let title: String
+    @Binding var color: Color
+    var onPick: () -> Void = {}
+
+    @State private var open = false
+    @State private var hue: Double = 0
+    @State private var sat: Double = 0
+    @State private var bri: Double = 1
+
+    private let swatches: [Color] = [
+        .white, Color(red: 1, green: 0.85, blue: 0.3), .orange, Color(red: 1, green: 0.4, blue: 0.5), .pink,
+        .purple, Color(red: 0.4, green: 0.6, blue: 1), .cyan, .mint, .green
+    ]
+
+    private func push() {
+        color = Color(hue: hue, saturation: sat, brightness: bri)
+        onPick()
+    }
+
+    private func load() {
+        let v = color.hsb
+        hue = v.h; sat = v.s; bri = v.b
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                if !open { load() }
+                open.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(color).frame(width: 16, height: 16)
+                        .overlay(Circle().stroke(Color.primary.opacity(0.3), lineWidth: 1))
+                    Text(title).font(.caption)
+                    Spacer()
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption2).foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if open {
+                square
+                hueBar
+                HStack(spacing: 5) {
+                    ForEach(0..<swatches.count, id: \.self) { i in
+                        Button {
+                            color = swatches[i]
+                            load()
+                            onPick()
+                        } label: {
+                            Circle().fill(swatches[i]).frame(width: 18, height: 18)
+                                .overlay(Circle().stroke(Color.primary.opacity(0.35), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var square: some View {
+        GeometryReader { g in
+            ZStack {
+                LinearGradient(colors: [.white, Color(hue: hue, saturation: 1, brightness: 1)], startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                Circle().stroke(Color.white, lineWidth: 2)
+                    .background(Circle().stroke(Color.black.opacity(0.4), lineWidth: 3.5))
+                    .frame(width: 12, height: 12)
+                    .position(x: g.size.width * sat, y: g.size.height * (1 - bri))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                sat = min(max(v.location.x / max(g.size.width, 1), 0), 1)
+                bri = 1 - min(max(v.location.y / max(g.size.height, 1), 0), 1)
+                push()
+            })
+        }
+        .frame(height: 110)
+    }
+
+    private var hueBar: some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                LinearGradient(colors: (0...12).map { Color(hue: Double($0) / 12.0, saturation: 1, brightness: 1) },
+                               startPoint: .leading, endPoint: .trailing)
+                    .clipShape(Capsule())
+                Circle().fill(Color(hue: hue, saturation: 1, brightness: 1))
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .frame(width: 14, height: 14)
+                    .offset(x: max(0, g.size.width - 14) * hue)
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                hue = min(max(v.location.x / max(g.size.width, 1), 0), 1)
+                push()
+            })
+        }
+        .frame(height: 14)
+    }
+}
+
+struct PlaylistOptions: View {
+    @ObservedObject var library: Library
+
+    var body: some View {
+        Toggle("Use helper playlists for queue and Play album", isOn: $library.usePlaylists)
+        Text("Apple Music can't be queued from outside, so Neko Lyrics fills two playlists named \"Neko Lyrics Queue\" and \"Neko Lyrics Album\". Off: no playlists, Play album plays the first song only.")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        Button("Delete the helper playlists") { library.removeHelperPlaylists() }
+            .font(.caption)
     }
 }

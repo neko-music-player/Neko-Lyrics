@@ -31,6 +31,7 @@ final class DesktopController {
     private var wallpaperShown = false
     private var wallpaperHideTask: Task<Void, Never>?
     private var lockShown = false
+    private var clockWindow: NSWindow?
 
     init(engine: Engine) { self.engine = engine }
 
@@ -129,6 +130,30 @@ final class DesktopController {
         }
     }
 
+    // MARK: Big clock (its own window, so it does not depend on the wallpaper or on music playing)
+
+    func syncClock() {
+        guard engine.showClock, let screen = NSScreen.main ?? NSScreen.screens.first else {
+            clockWindow?.orderOut(nil)
+            return
+        }
+        if clockWindow == nil {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 320), styleMask: [.borderless], backing: .buffered, defer: false)
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.hasShadow = false
+            w.ignoresMouseEvents = true
+            w.isReleasedWhenClosed = false
+            w.level = NSWindow.Level(rawValue: Self.desktopLevel + 2)
+            w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+            clockWindow = w
+        }
+        clockWindow?.contentView = NSHostingView(rootView: ClockHost(engine: engine))
+        let f: NSRect = screen.frame
+        clockWindow?.setFrame(NSRect(x: f.midX - 260, y: f.maxY - 340 - 40, width: 520, height: 320), display: true)
+        clockWindow?.orderFront(nil)
+    }
+
     // MARK: Live wallpaper (a window just above the real wallpaper, below desktop icons)
 
     /// The wallpaper stays up through the short gap between songs (playback briefly reads as "not playing"),
@@ -214,15 +239,15 @@ struct WallpaperView: View {
                 } else {
                     BackdropView(mode: .animated, palette: engine.palette, image: nil, clock: clock)
                 }
-                if engine.showClock {
-                    BigClock(color: engine.palette.highlight)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .padding(.top, 50)
-                }
             }
         }
         .ignoresSafeArea()
     }
+}
+
+struct ClockHost: View {
+    @ObservedObject var engine: Engine
+    var body: some View { BigClock(color: engine.palette.highlight).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top) }
 }
 
 /// Tall, thin, translucent clock with the date above it.
@@ -316,7 +341,6 @@ struct DesktopPlayerView: View {
         }
         .padding(26)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background { PlayerBackdrop(engine: engine) }
         .foregroundColor(.white)
         .environment(\.colorScheme, .dark)
         .overlay(alignment: .topTrailing) {
@@ -1013,49 +1037,4 @@ private struct PlayerStage: View {
 /// (on the lock screen the player never becomes active, so sliders and buttons need this).
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
-
-
-/// The player's own background: whichever Background you chose in Look (the desktop lyrics window is not
-/// drawn while the player is open, so the choice used to have no effect there).
-private struct PlayerBackdrop: View {
-    @ObservedObject var engine: Engine
-
-    private var moves: Bool {
-        engine.background == .animated || engine.background == .coverAnimated || engine.background == .fullArtwork
-    }
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
-        Group {
-            if moves {
-                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { tl in
-                    layers(clock: tl.date.timeIntervalSinceReferenceDate)
-                }
-            } else {
-                layers(clock: 0)
-            }
-        }
-        .clipShape(shape)
-        .overlay(shape.stroke(Color.white.opacity(0.14), lineWidth: 0.8))
-    }
-
-    @ViewBuilder
-    private func layers(clock: Double) -> some View {
-        ZStack {
-            if engine.background == .transparent {
-                Rectangle().fill(.ultraThinMaterial)
-                Color.black.opacity(0.25)
-            } else {
-                BackdropView(mode: engine.background, palette: engine.palette,
-                             image: engine.albumSmall ?? engine.albumImage, clock: clock,
-                             sharp: engine.albumImage, sharpness: engine.coverSharpness,
-                             zoom: engine.coverZoom, motion: engine.coverMotion)
-                if engine.background == .fullArtwork {
-                    ArtworkFill(image: engine.albumImage, video: engine.videoURL, clock: clock)
-                }
-                Color.black.opacity(0.18)       // keeps the white controls readable on bright covers
-            }
-        }
-    }
 }

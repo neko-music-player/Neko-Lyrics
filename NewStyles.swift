@@ -13,31 +13,56 @@ struct ConstellationStyleView: View {
         Double(StableHash.value(key, salt: salt) % 10_000) / 10_000.0
     }
 
-    /// Where each word of a line sits: a loose zig-zag across the screen, the same every time for that line.
+    /// Where each word of a line sits. Every line picks its own shape (zig-zag, arc, wave, diagonal,
+    /// scatter or ring), the same every time for that line, so the sky keeps changing.
     private func points(_ lineIndex: Int, count n: Int, in size: CGSize) -> [CGPoint] {
         var out: [CGPoint] = []
         let w: CGFloat = size.width
         let h: CGFloat = size.height
         let usable: CGFloat = w * 0.78
+        let pattern: Int = Int(rnd("pat\(lineIndex)", 9) * 6.0) % 6
+        let flip: CGFloat = rnd("flip\(lineIndex)", 10) > 0.5 ? 1 : -1
         let rows: Int = n > 8 ? 3 : 2
         for k in 0..<n {
             let key: String = "\(lineIndex)-\(k)"
             let frac: CGFloat = (CGFloat(k) + 0.5) / CGFloat(max(n, 1))
             let jitterX: CGFloat = CGFloat(rnd(key, 1) - 0.5) * (usable / CGFloat(max(n, 1))) * 0.5
-            let x: CGFloat = w * 0.11 + usable * frac + jitterX
-            let band: Int = k % rows
-            let lane: CGFloat = CGFloat(band) - CGFloat(rows - 1) / 2.0
-            let jitterY: CGFloat = CGFloat(rnd(key, 2) - 0.5) * h * 0.08
-            let y: CGFloat = h * 0.5 + lane * h * 0.17 + jitterY
+            var x: CGFloat = w * 0.11 + usable * frac + jitterX
+            var y: CGFloat = h * 0.5
+            switch pattern {
+            case 0:
+                let lane: CGFloat = CGFloat(k % rows) - CGFloat(rows - 1) / 2.0
+                y += lane * h * 0.17
+            case 1:
+                y += (0.5 - CGFloat(sin(Double(frac) * Double.pi))) * h * 0.36 * flip
+            case 2:
+                y += CGFloat(sin(Double(frac) * Double.pi * 2.0)) * h * 0.15 * flip
+            case 3:
+                y += (frac - 0.5) * h * 0.4 * flip + CGFloat(rnd(key, 11) - 0.5) * h * 0.06
+            case 4:
+                y += CGFloat(rnd(key, 12) - 0.5) * h * 0.42
+            default:
+                let a: Double = Double(frac) * Double.pi * 2.0 + rnd("rot\(lineIndex)", 13) * 6.28
+                x = w * 0.5 + CGFloat(cos(a)) * w * 0.30
+                y += CGFloat(sin(a)) * h * 0.22
+            }
+            y += CGFloat(rnd(key, 2) - 0.5) * h * 0.06
             out.append(CGPoint(x: x, y: y))
         }
         return out
     }
 
-    private func drift(_ p: CGPoint, _ k: Int) -> CGPoint {
+    /// Gentle floating, plus a fly-in: each star arrives from its own direction when its word starts.
+    private func drift(_ p: CGPoint, _ k: Int, age: Double = 10.0, line: Int = 0) -> CGPoint {
         let a: Double = Double(k) * 1.3
-        let dx: CGFloat = CGFloat(sin(clock * 0.5 + a) * 6.0)
-        let dy: CGFloat = CGFloat(cos(clock * 0.43 + a) * 6.0)
+        var dx: CGFloat = CGFloat(sin(clock * 0.5 + a) * 6.0)
+        var dy: CGFloat = CGFloat(cos(clock * 0.43 + a) * 6.0)
+        if age < 0.8 {
+            let e: Double = pow(1.0 - max(age, 0.0) / 0.8, 3.0)
+            let ang: Double = rnd("in\(line)-\(k)", 14) * 6.28
+            dx += CGFloat(cos(ang) * 160.0 * e)
+            dy += CGFloat(sin(ang) * 110.0 * e)
+        }
         return CGPoint(x: p.x + dx, y: p.y + dy)
     }
 
@@ -80,7 +105,7 @@ struct ConstellationStyleView: View {
         let lines = engine.lines
         guard index >= 0, index < lines.count, fade > 0.01 else { return }
         let words = lines[index].words
-        let pts: [CGPoint] = points(index, count: words.count, in: size).enumerated().map { drift($0.element, $0.offset) }
+        let pts: [CGPoint] = points(index, count: words.count, in: size).enumerated().map { drift($0.element, $0.offset, age: t - words[$0.offset].start, line: index) }
         for k in 0..<words.count {
             let age: Double = t - words[k].start
             guard age >= 0 else { continue }
@@ -118,7 +143,7 @@ struct ConstellationStyleView: View {
             let fontSize: CGFloat = min(size.height * 0.07, 58)
             ZStack {
                 ForEach(0..<words.count, id: \.self) { k in
-                    star(word: words[k], k: k, at: drift(pts[k], k), fontSize: fontSize, fade: fade)
+                    star(word: words[k], k: k, at: drift(pts[k], k, age: t - words[k].start, line: index), fontSize: fontSize, fade: fade)
                 }
             }
         }
