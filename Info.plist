@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>Neko Lyrics</string>
+    <key>CFBundleDisplayName</key><string>Neko Lyrics</string>
+    <key>CFBundleIdentifier</key><string>app.nekolyrics.mac</string>
+    <key>CFBundleExecutable</key><string>NekoLyrics</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>1.4</string>
+    <key>CFBundleVersion</key><string>14</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <!-- Menu bar only: no dock icon (the Dock icon can be switched on in Settings) -->
+    <key>LSUIElement</key><true/>
+    <!-- Required to read playback from Spotify / Music and to control them -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Neko Lyrics reads and controls playback in Spotify and Music to sync lyrics and show the player.</string>
+    <!-- Required for the iPhone companion (MultipeerConnectivity) -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Neko Lyrics shares lyrics with your iPhone on the local network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_nekolyrics._tcp</string>
+        <string>_nekolyrics._udp</string>
+    </array>
+</dict>
+</plist>
