@@ -265,6 +265,7 @@ struct SettingsView: View {
                 ForEach(StackMotion.allCases) { m in Text(m.title).tag(m) }
             }
         }
+        Toggle("Random font for each song", isOn: $engine.fontRandom)
         Picker("Font", selection: $engine.fontFamily) {
             ForEach(FontChoices.all) { f in Text(f.name).tag(f.id) }
         }

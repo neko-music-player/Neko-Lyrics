@@ -12,6 +12,7 @@ struct Album: Identifiable, Equatable {
     let art: URL?
     let link: URL?
     var local: Bool = false      // from your own Music library (cover read from the app)
+    var genre: String = ""
 }
 
 struct SongHit: Identifiable, Equatable {
@@ -70,6 +71,19 @@ enum Script {
         out.reserveCapacity(d.numberOfItems)
         for i in 1...d.numberOfItems { out.append(d.atIndex(i)?.stringValue ?? "") }
         return out
+    }
+
+    /// Runs on the main thread (commands like play / duplicate are happier there) and reports Music's own error text.
+    @MainActor
+    static func runChecked(_ source: String) -> (text: String, error: String?) {
+        var error: NSDictionary?
+        let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+        if let error {
+            let msg: String = (error["NSAppleScriptErrorMessage"] as? String) ?? "unknown error"
+            let num: String = (error["NSAppleScriptErrorNumber"] as? NSNumber)?.stringValue ?? "?"
+            return ("", "\(msg) (\(num))")
+        }
+        return (result?.stringValue ?? "", nil)
     }
 
     @MainActor
@@ -170,6 +184,8 @@ final class Library: ObservableObject {
                 let albumsD = Script.runBackground("tell application \"Music\" to return album of every track of library playlist 1")
                 let artistsD = Script.runBackground("tell application \"Music\" to return artist of every track of library playlist 1")
                 let yearsD = Script.runBackground("tell application \"Music\" to return year of every track of library playlist 1")
+                let genresD = Script.runBackground("tell application \"Music\" to return genre of every track of library playlist 1")
+                let genres = Script.strings(genresD)
                 let names = Script.strings(albumsD)
                 let artists = Script.strings(artistsD)
                 let years = Script.strings(yearsD)
@@ -184,7 +200,7 @@ final class Library: ObservableObject {
                     seen.insert(id)
                     let year = i < years.count ? years[i] : ""
                     out.append(Album(id: id, name: name, artist: artists[i], year: year == "0" ? "" : year,
-                                     art: nil, link: nil, local: true))
+                                     art: nil, link: nil, local: true, genre: i < genres.count ? genres[i] : ""))
                 }
                 return out
             }.value
@@ -198,25 +214,92 @@ final class Library: ObservableObject {
         }
     }
 
+    /// The artist's own albums first, then albums in the same genre, then a random pick of the rest.
+    /// Different every time, so the browser doesn't always show the same covers.
     private func arrange(artist: String) {
         let key: String = artist.lowercased()
         var mine: [Album] = []
-        var others: [Album] = []
+        var rest: [Album] = []
         for album in allLocal {
-            if album.artist.lowercased().contains(key) { mine.append(album) } else if others.count < 60 { others.append(album) }
+            if !key.isEmpty, album.artist.lowercased().contains(key) { mine.append(album) } else { rest.append(album) }
         }
         mine.sort { $0.year > $1.year }
-        let list: [Album] = mine + others
+        let genre: String = mine.first?.genre ?? ""
+        var related: [Album] = []
+        if !genre.isEmpty { related = Array(rest.filter { $0.genre == genre }.shuffled().prefix(18)) }
+        let used = Set(related.map { $0.id })
+        let others: [Album] = Array(rest.filter { !used.contains($0.id) }.shuffled().prefix(40))
+        let list: [Album] = mine + related + others
         if list.isEmpty { loadStoreAlbums(artist: artist); return }
         albums = list
         center = 0
     }
 
+    /// New random picks (the shuffle button above the album browser).
+    func reshuffle() {
+        guard albumSource == .library, !allLocal.isEmpty else { return }
+        arrange(artist: albumsArtist)
+    }
+
     /// Reads one album's cover from the Music app (cached), on demand.
+    /// Persistent IDs of an album's songs in disc / track order.
+    private func albumIDs(_ album: Album) async -> [String] {
+        let name: String = Script.quote(album.name)
+        let src = """
+        tell application "Music"
+            try
+                set ts to (every track of library playlist 1 whose album is "\(name)")
+                set out to ""
+                repeat with t in ts
+                    set out to out & (persistent ID of t) & "||" & (disc number of t) & "||" & (track number of t) & linefeed
+                end repeat
+                return out
+            on error
+                return ""
+            end try
+        end tell
+        """
+        let text: String = await Task.detached(priority: .userInitiated) {
+            Script.runBackground(src)?.stringValue ?? ""
+        }.value
+        var rows: [(disc: Int, no: Int, id: String)] = []
+        for row in text.components(separatedBy: "\n") {
+            let p: [String] = row.components(separatedBy: "||")
+            guard p.count >= 3, !p[0].isEmpty else { continue }
+            rows.append((Int(p[1]) ?? 1, Int(p[2]) ?? 0, p[0]))
+        }
+        rows.sort { $0.disc != $1.disc ? $0.disc < $1.disc : $0.no < $1.no }
+        return rows.map { $0.id }
+    }
+
+    /// Plays an album from its first song, in album order (replaces the queue, like playing it in Music does).
     func playAlbum(_ album: Album) {
         guard album.local else { openAlbum(album); return }
-        Task.detached(priority: .userInitiated) {
-            _ = Script.runBackground("tell application \"Music\" to play (first track of library playlist 1 whose album is \"\(Script.quote(album.name))\")")
+        Task { [weak self] in
+            guard let self else { return }
+            let ids: [String] = await self.albumIDs(album)
+            if ids.isEmpty { self.notice("No songs found for that album"); return }
+            let list: String = ids.map { "\"\(Script.quote($0))\"" }.joined(separator: ", ")
+            let src = """
+            tell application "Music"
+                set wlName to "Neko Lyrics Album"
+                if not (exists user playlist wlName) then make new user playlist with properties {name:wlName}
+                set wlP to user playlist wlName
+                try
+                    delete (every track of wlP)
+                end try
+                repeat with wlID in {\(list)}
+                    try
+                        duplicate (first track of library playlist 1 whose persistent ID is (wlID as text)) to wlP
+                    end try
+                end repeat
+                play wlP
+            end tell
+            """
+            let r = Script.runChecked(src)
+            self.notice(r.error.map { "Couldn't play: " + $0 } ?? "Playing \(album.name)")
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            self.refreshQueue()
         }
     }
 
@@ -410,35 +493,11 @@ final class Library: ObservableObject {
     /// Adds a whole album to the queue straight from the cover (no need to open it first).
     func addAlbumToQueue(_ album: Album, next: Bool = true) {
         guard album.local else { openAlbum(album); return }
-        let name: String = Script.quote(album.name)
-        let src = """
-        tell application "Music"
-            try
-                set ts to (every track of library playlist 1 whose album is "\(name)")
-                set out to ""
-                repeat with t in ts
-                    set out to out & (persistent ID of t) & "||" & (disc number of t) & "||" & (track number of t) & linefeed
-                end repeat
-                return out
-            on error
-                return ""
-            end try
-        end tell
-        """
         Task { [weak self] in
-            let text: String = await Task.detached(priority: .userInitiated) {
-                Script.runBackground(src)?.stringValue ?? ""
-            }.value
             guard let self else { return }
-            var rows: [(disc: Int, no: Int, id: String)] = []
-            for row in text.components(separatedBy: "\n") {
-                let p: [String] = row.components(separatedBy: "||")
-                guard p.count >= 3, !p[0].isEmpty else { continue }
-                rows.append((Int(p[1]) ?? 1, Int(p[2]) ?? 0, p[0]))
-            }
-            rows.sort { $0.disc != $1.disc ? $0.disc < $1.disc : $0.no < $1.no }
-            if rows.isEmpty { self.notice("No songs found for that album"); return }
-            self.addToQueue(rows.map { $0.id }, next: next)
+            let ids: [String] = await self.albumIDs(album)
+            if ids.isEmpty { self.notice("No songs found for that album"); return }
+            self.addToQueue(ids, next: next)
         }
     }
 
@@ -470,7 +529,7 @@ final class Library: ObservableObject {
                         set wlPl to current playlist
                         set wlIdx to index of wlCur
                         set wlTotal to count of tracks of wlPl
-                        set wlStop to wlIdx + 99
+                        set wlStop to wlIdx + 59
                         if wlStop > wlTotal then set wlStop to wlTotal
                         try
                             delete (every track of wlQ)
@@ -514,16 +573,14 @@ final class Library: ObservableObject {
         end tell
         """
         Task { [weak self] in
-            let text: String = await Task.detached(priority: .userInitiated) {
-                Script.runBackground(src)?.stringValue ?? ""
-            }.value
             guard let self else { return }
-            if text.hasPrefix("ERR:") {
-                self.notice("Couldn't add: " + text.dropFirst(4))
-            } else if text.isEmpty {
-                self.notice("Couldn't add: Music didn't accept the script (allow Neko Lyrics under Privacy > Automation > Music)")
+            let r = Script.runChecked(src)
+            if let err = r.error {
+                self.notice("Couldn't add: " + err)
+            } else if r.text.hasPrefix("ERR:") {
+                self.notice("Couldn't add: " + r.text.dropFirst(4))
             } else {
-                self.notice(next ? text.replacingOccurrences(of: "Added to your queue", with: "Playing next") : text)
+                self.notice(next ? r.text.replacingOccurrences(of: "Added to your queue", with: "Playing next") : r.text)
             }
             try? await Task.sleep(nanoseconds: 800_000_000)
             self.refreshQueue()
@@ -532,7 +589,8 @@ final class Library: ObservableObject {
 
     func playLocal(persistentID: String) {
         let src = "tell application \"Music\" to play (first track of library playlist 1 whose persistent ID is \"\(Script.quote(persistentID))\")"
-        Task.detached(priority: .userInitiated) { _ = Script.runBackground(src) }
+        let r = Script.runChecked(src)
+        if let err = r.error { notice("Couldn't play: " + err) }
     }
 
     func clearSearch() {

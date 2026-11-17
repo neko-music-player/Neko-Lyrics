@@ -319,7 +319,7 @@ final class Engine: ObservableObject {
     }
 
     /// Cover art is fetched when colors, the backdrop, the artwork or the music widget want it.
-    var needsArtwork: Bool { autoSync || background.usesCover || showWidget || artwork != .none || liveWallpaper || playerOpen || dockIcon || showLockPlayer }
+    var needsArtwork: Bool { autoSync || edgeLight || background.usesCover || showWidget || artwork != .none || liveWallpaper || playerOpen || dockIcon || showLockPlayer }
 
     /// True while the glass player is on screen and carries the lyrics itself (desktop or lock screen).
     var playerHostsLyrics: Bool {
@@ -456,8 +456,32 @@ final class Engine: ObservableObject {
     }
 
     /// Colors in use: the album palette when Auto Sync is on and art was found, else your three picks.
+    /// "Random font": each song gets a font and weight of its own, the same one every time.
+    private static let fontPool: [String] = [
+        LyricFont.roundedID, LyricFont.serifID, LyricFont.systemID,
+        "Cooper Black", "Futura", "Avenir Next", "Georgia", "Didot", "Baskerville", "Marker Felt",
+        "Chalkboard SE", "Optima", "Gill Sans", "Rockwell", "Trebuchet MS", "Hoefler Text", "Palatino", "Copperplate",
+    ]
+
+    private var chosenFont: LyricFont {
+        guard fontRandom, !currentKey.isEmpty else {
+            return LyricFont(family: fontFamily, weightIndex: fontWeight, scale: fontScale)
+        }
+        let installed = Set(NSFontManager.shared.availableFontFamilies)
+        let pool: [String] = Self.fontPool.filter { $0.hasPrefix("system") || installed.contains($0) }
+        let h: UInt64 = StableHash.value(currentKey, salt: 91)
+        let family: String = pool.isEmpty ? LyricFont.roundedID : pool[Int(h % UInt64(pool.count))]
+        let weights: [Int] = [3, 4, 5, 6]
+        let weight: Int = weights[Int((h / 97) % UInt64(weights.count))]
+        return LyricFont(family: family, weightIndex: weight, scale: fontScale)
+    }
+
+    @Published var fontRandom: Bool = UserDefaults.standard.bool(forKey: "fontRandom") {
+        didSet { UserDefaults.standard.set(fontRandom, forKey: "fontRandom") }
+    }
+
     var palette: Palette {
-        let font = LyricFont(family: fontFamily, weightIndex: fontWeight, scale: fontScale)
+        let font = chosenFont
         if autoSync, var p = albumPalette {
             p.font = font
             return p.fixed(backdrop: backdropLuminance)

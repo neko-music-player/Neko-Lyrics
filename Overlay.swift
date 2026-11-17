@@ -92,7 +92,7 @@ final class OverlayController {
             p.canBecomeVisibleWithoutLogin = true
             p.level = NSWindow.Level(rawValue: Int(Int32.max - 1))
             p.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
-            let host = NSHostingView(rootView: MusicWidgetView(engine: engine))
+            let host = FirstMouseHostingView(rootView: MusicWidgetView(engine: engine))
             host.frame = NSRect(origin: .zero, size: size)
             p.contentView = host
             widget = p
@@ -170,8 +170,10 @@ struct LyricsOverlayView: View {
         }
     }
 
+    /// The edge light always follows the album cover when there is one, whatever Auto Sync says.
     private func edgeColors(_ p: Palette) -> [Color] {
-        p.isAuto ? [p.highlight, p.backdropA, p.lyric, p.backdropB] : [p.highlight, p.lyric, p.highlight]
+        if let a = engine.albumPalette { return [a.highlight, a.backdropA, a.lyric, a.backdropB] }
+        return p.isAuto ? [p.highlight, p.backdropA, p.lyric, p.backdropB] : [p.highlight, p.lyric, p.highlight]
     }
 }
 
@@ -339,7 +341,32 @@ struct ArtworkCard: View {
     let glow: Color
     let clock: Double
 
+    @State private var shown: NSImage? = nil
+    @State private var flip: Double = -90
+
+    private var key: ObjectIdentifier? { image.map { ObjectIdentifier($0) } }
+
+    /// Turns the card over to show a new cover.
+    private func turnOver() {
+        Task { @MainActor in
+            withAnimation(.easeIn(duration: 0.22)) { flip = 90 }
+            try? await Task.sleep(nanoseconds: 230_000_000)
+            shown = image
+            flip = -90
+            withAnimation(.spring(response: 0.75, dampingFraction: 0.7)) { flip = 0 }
+        }
+    }
+
     var body: some View {
+        cardBody
+            .onAppear {
+                shown = image
+                withAnimation(.spring(response: 0.9, dampingFraction: 0.68)) { flip = 0 }
+            }
+            .onChange(of: key) { _, _ in turnOver() }
+    }
+
+    private var cardBody: some View {
         GeometryReader { g in
             let side: CGFloat = min(g.size.width * 0.8, g.size.height * 0.5)
             let sway: Double = animated ? sin(clock * 0.6) * 14 : 0
@@ -376,6 +403,7 @@ struct ArtworkCard: View {
                     .overlay(shape.stroke(Color.white.opacity(0.22), lineWidth: 1))
             }
             .shadow(color: Color.black.opacity(0.45), radius: 22, y: 12)
+            .rotation3DEffect(.degrees(flip), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
             .rotation3DEffect(.degrees(sway), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
             .rotation3DEffect(.degrees(nod), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
             .offset(y: bob)
@@ -387,7 +415,7 @@ struct ArtworkCard: View {
     private func face(side: CGFloat) -> some View {
         if animated, let video {
             VideoLoopView(url: video)
-        } else if let image {
+        } else if let image = shown ?? image {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()

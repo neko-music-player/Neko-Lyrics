@@ -175,3 +175,16 @@ usage description plus Bonjour services `_nekolyrics._tcp` and `_nekolyrics._udp
 
 Original code. Design ideas were inspired by other lyrics and player apps; no code was copied from them. The lyrics
 catalogue and LRCLIB are third-party services with their own terms. The logo is the Neko mark in `Assets/`.
+
+## v1.4.1
+- Lock screen: the player reacts to the first click (progress bar scrub works).
+- Album browser: related + random albums, shuffle button; playing an album builds an ordered playlist and plays it; queue and play commands run on the main thread and report the real error from Music.
+- Cover flips when the album changes and glides from centre to the left when lyrics appear.
+
+## v1.4.2
+- Live wallpaper no longer vanishes after a song change: it waits 3 s before fading out and a late fade-out can no longer hide a wallpaper that was just shown again.
+
+## v1.4.3
+- Backgrounds now work with the player open: the player draws the Background you chose (Transparent, Dim, Color gradient, Album cover, Animated colors, Cover + animated, Full-screen artwork). Before, only the desktop lyrics window drew it, and that window is hidden while the player is open.
+- Random font per song (Look > Font).
+- Edge light redrawn as a soft glow from four eased gradient strips (no blur, no sparks) that always follows the album cover colors, even with Auto Sync off.

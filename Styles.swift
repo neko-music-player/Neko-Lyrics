@@ -1056,26 +1056,53 @@ struct EdgeLightView: View {
     let glow: Double
     var radius: Double = 14
 
-    var body: some View {
-        let cols: [Color] = colors.map { $0.vivid }
-        let ring: [Color] = cols + [cols[0]]
-        let grad = AngularGradient(colors: ring, center: .center, angle: .degrees(clock * 14.0))
-        let base: Double = thickness * (1.0 + 0.35 * kick)
-        let alpha: Double = (0.5 + 0.5 * kick) * glow
-        let shape = RoundedRectangle(cornerRadius: CGFloat(radius), style: .continuous)
-
-        ZStack {
-            EdgeSparkles(colors: cols, clock: clock, kick: kick)
-            // A diffused glow: many wide, faint strokes that fade smoothly inward. No bright core line.
-            ForEach(0..<8, id: \.self) { k in
-                let f: Double = Double(k) / 7.0                       // 0 = outermost reach, 1 = at the edge
-                let w: Double = base * (0.5 + 5.5 * (1.0 - f) * (1.0 - f)) + 2.0
-                shape
-                    .strokeBorder(grad, lineWidth: CGFloat(w))
-                    .opacity(alpha * (0.035 + 0.05 * f))
-            }
+    /// 1 at the screen edge, falling smoothly to 0: an eased curve, so there is no visible band or hard edge.
+    private func fade(_ strength: Double) -> Gradient {
+        var stops: [Gradient.Stop] = []
+        for i in 0...10 {
+            let x: Double = Double(i) / 10.0
+            let a: Double = pow(1.0 - x, 2.4) * strength
+            stops.append(Gradient.Stop(color: Color.white.opacity(a), location: CGFloat(x)))
         }
-        .drawingGroup()
+        return Gradient(stops: stops)
+    }
+
+    /// The album colors, flowing slowly along an edge; seamless because the list repeats once.
+    private func flow(_ horizontal: Bool, _ cols: [Color]) -> LinearGradient {
+        let phase: Double = (clock * 0.045).truncatingRemainder(dividingBy: 1.0)
+        let list: [Color] = cols + cols + [cols[0]]
+        let start: UnitPoint = horizontal ? UnitPoint(x: -phase, y: 0.5) : UnitPoint(x: 0.5, y: -phase)
+        let end: UnitPoint = horizontal ? UnitPoint(x: 2.0 - phase, y: 0.5) : UnitPoint(x: 0.5, y: 2.0 - phase)
+        return LinearGradient(colors: list, startPoint: start, endPoint: end)
+    }
+
+    var body: some View {
+        let cols: [Color] = colors.isEmpty ? [Color.white] : colors.map { $0.vivid }
+        let depthBase: Double = 40.0 + thickness * 5.0
+        let depth: CGFloat = CGFloat(depthBase * (1.0 + 0.25 * kick))
+        let strength: Double = min(1.0, glow * (0.75 + 0.35 * kick))
+        let mask = fade(strength)
+        GeometryReader { g in
+            ZStack {
+                Rectangle().fill(flow(true, cols))
+                    .mask(LinearGradient(gradient: mask, startPoint: .top, endPoint: .bottom))
+                    .frame(width: g.size.width, height: depth)
+                    .position(x: g.size.width / 2, y: depth / 2)
+                Rectangle().fill(flow(true, cols.reversed()))
+                    .mask(LinearGradient(gradient: mask, startPoint: .bottom, endPoint: .top))
+                    .frame(width: g.size.width, height: depth)
+                    .position(x: g.size.width / 2, y: g.size.height - depth / 2)
+                Rectangle().fill(flow(false, cols))
+                    .mask(LinearGradient(gradient: mask, startPoint: .leading, endPoint: .trailing))
+                    .frame(width: depth, height: g.size.height)
+                    .position(x: depth / 2, y: g.size.height / 2)
+                Rectangle().fill(flow(false, cols.reversed()))
+                    .mask(LinearGradient(gradient: mask, startPoint: .trailing, endPoint: .leading))
+                    .frame(width: depth, height: g.size.height)
+                    .position(x: g.size.width - depth / 2, y: g.size.height / 2)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: CGFloat(radius), style: .continuous))
+        }
         .allowsHitTesting(false)
     }
 }

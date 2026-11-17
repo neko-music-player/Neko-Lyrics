@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "NekoLyrics",
             path: ".",
-            exclude: ["README.md", "build.sh", "package.sh", "Info.plist", "iOS", "Assets", "dist"],
+            exclude: ["README.md", "build.sh", "package.sh", "Info.plist", "iOS", "Assets"],
             sources: [
                 "App.swift", "Engine.swift", "Models.swift", "NowPlaying.swift",
                 "LyricsProvider.swift", "AppleLyrics.swift", "NewStyles.swift", "LRC.swift", "EmbeddedLyrics.swift", "LyricsCache.swift",

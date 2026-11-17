@@ -29,6 +29,7 @@ final class DesktopController {
     private var player: GlassWindow?
     private var wallpaper: NSWindow?
     private var wallpaperShown = false
+    private var wallpaperHideTask: Task<Void, Never>?
     private var lockShown = false
 
     init(engine: Engine) { self.engine = engine }
@@ -47,7 +48,7 @@ final class DesktopController {
             w.hasShadow = false
             w.isMovableByWindowBackground = engine.playerDraggable
             w.isReleasedWhenClosed = false
-            let host = NSHostingView(rootView: DesktopPlayerView(engine: engine, lib: engine.library))
+            let host = FirstMouseHostingView(rootView: DesktopPlayerView(engine: engine, lib: engine.library))
             host.sizingOptions = []
             host.autoresizingMask = [.width, .height]
             host.frame = NSRect(origin: .zero, size: size)
@@ -130,17 +131,34 @@ final class DesktopController {
 
     // MARK: Live wallpaper (a window just above the real wallpaper, below desktop icons)
 
+    /// The wallpaper stays up through the short gap between songs (playback briefly reads as "not playing"),
+    /// and only fades away after a real pause. Before, a song change could start the fade-out, then the fade-in,
+    /// and the fade-out's last step hid the window for good while the setting still said "on".
     func syncWallpaper(show: Bool) {
-        guard show != wallpaperShown else { return }
-        wallpaperShown = show
-        if !show {
-            guard let w = wallpaper, w.isVisible else { return }
-            NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.6
-                w.animator().alphaValue = 0
-            }, completionHandler: { w.orderOut(nil) })
+        if show {
+            wallpaperHideTask?.cancel()
+            wallpaperHideTask = nil
+        } else {
+            guard wallpaperShown, wallpaperHideTask == nil else { return }
+            wallpaperHideTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                self.wallpaperHideTask = nil
+                self.wallpaperShown = false
+                guard let w = self.wallpaper, w.isVisible else { return }
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 0.6
+                    w.animator().alphaValue = 0
+                }, completionHandler: {
+                    Task { @MainActor [weak self] in
+                        if self?.wallpaperShown == false { w.orderOut(nil) }
+                    }
+                })
+            }
             return
         }
+        guard !wallpaperShown else { return }
+        wallpaperShown = true
         guard let screen = NSScreen.main else { return }
         if wallpaper == nil {
             let w = NSWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -298,6 +316,7 @@ struct DesktopPlayerView: View {
         }
         .padding(26)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { PlayerBackdrop(engine: engine) }
         .foregroundColor(.white)
         .environment(\.colorScheme, .dark)
         .overlay(alignment: .topTrailing) {
@@ -354,6 +373,10 @@ struct DesktopPlayerView: View {
             : (lib.albumSource == .library ? "Search your music library" : "Search Apple Music")
     }
 
+    private var hasLyricsHere: Bool {
+        engine.lyricsEnabled && engine.playerShowsLyrics && engine.playerHostsLyrics && !engine.lines.isEmpty
+    }
+
     /// The album browser can be switched off separately for the desktop and the lock screen.
     private var browserAllowed: Bool {
         engine.isLocked ? engine.lockAlbumBrowser : engine.showAlbumBrowser
@@ -363,20 +386,8 @@ struct DesktopPlayerView: View {
     private var centerArea: some View {
         if lib.searching || !lib.results.isEmpty || !lib.searchMessage.isEmpty {
             SearchResults(engine: engine, lib: lib)
-        } else if engine.lyricsEnabled && engine.playerShowsLyrics && engine.playerHostsLyrics && !engine.lines.isEmpty {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
-                HStack(spacing: 0) {
-                    if engine.artwork.isCard {
-                        ArtworkCard(image: engine.albumImage, video: engine.videoURL,
-                                    animated: engine.artwork == .animated, glow: engine.palette.highlight,
-                                    clock: tl.date.timeIntervalSinceReferenceDate)
-                            .frame(width: 300)
-                    }
-                    LyricsStyleHost(engine: engine, t: engine.currentTime, palette: engine.palette,
-                                    clock: tl.date.timeIntervalSinceReferenceDate)
-                        .shadow(color: Color.black.opacity(0.6), radius: 8)
-                }
-            }
+        } else if hasLyricsHere || (!browserAllowed && engine.track != nil && lib.openedAlbum == nil) {
+            PlayerStage(engine: engine, hasLyrics: hasLyricsHere, browserAllowed: browserAllowed)
         } else if let album = lib.openedAlbum {
             AlbumSongs(lib: lib, album: album)
         } else if engine.track == nil {
@@ -384,8 +395,6 @@ struct DesktopPlayerView: View {
                 .font(.callout)
                 .opacity(0.6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !browserAllowed {
-            NowPlayingCenter(engine: engine)
         } else if lib.albums.isEmpty {
             Text(engine.track == nil ? "Play a song to see the artist's albums" : "Loading albums…")
                 .font(.callout)
@@ -399,6 +408,20 @@ struct DesktopPlayerView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 190)
+                .overlay(alignment: .trailing) {
+                    if lib.albumSource == .library {
+                        Button { lib.reshuffle() } label: {
+                            Image(systemName: "shuffle")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(width: 26, height: 26)
+                                .glass(13)
+                        }
+                        .buttonStyle(.plain)
+                        .offset(x: 34)
+                        .help("Show different albums")
+                    }
+                }
+                if !lib.queueNotice.isEmpty { Text(lib.queueNotice).font(.caption).opacity(0.8) }
                 CoverFlow(albums: lib.albums, center: $lib.center, art: lib.localArt,
                           need: { lib.ensureArt($0) },
                           open: { lib.showAlbum($0) },
@@ -943,28 +966,96 @@ struct PlayerBar: View {
 }
 
 
-/// What the middle of the player shows when there are no lyrics and the album browser is off: the cover.
-private struct NowPlayingCenter: View {
+/// The middle of the player: the cover and, once there are lyrics, the lyrics beside it. The cover glides from the
+/// centre to the left (and flips when the album changes) instead of jumping.
+private struct PlayerStage: View {
     @ObservedObject var engine: Engine
+    let hasLyrics: Bool
+    let browserAllowed: Bool
+
+    private var showCard: Bool { hasLyrics ? engine.artwork.isCard : true }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { tl in
-            VStack(spacing: 14) {
-                ArtworkCard(image: engine.albumImage, video: engine.videoURL,
-                            animated: engine.artwork == .animated, glow: engine.palette.highlight,
-                            clock: tl.date.timeIntervalSinceReferenceDate)
-                    .frame(maxWidth: 420, maxHeight: .infinity)
-                if let track = engine.track {
-                    VStack(spacing: 3) {
-                        Text(track.title).font(.system(size: 20, weight: .bold)).lineLimit(1)
-                        Text(track.artist).font(.system(size: 14)).opacity(0.65).lineLimit(1)
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+            let clock: Double = tl.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 0) {
+                if showCard {
+                    VStack(spacing: 14) {
+                        ArtworkCard(image: engine.albumImage, video: engine.videoURL,
+                                    animated: engine.artwork == .animated, glow: engine.palette.highlight, clock: clock)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if !hasLyrics, let track = engine.track {
+                            VStack(spacing: 3) {
+                                Text(track.title).font(.system(size: 20, weight: .bold)).lineLimit(1)
+                                Text(track.artist).font(.system(size: 14)).opacity(0.65).lineLimit(1)
+                                if engine.lyricsEnabled && engine.lines.isEmpty {
+                                    Text(engine.status).font(.caption).opacity(0.5)
+                                }
+                            }
+                            .transition(.opacity)
+                        }
                     }
+                    .frame(width: hasLyrics ? 300 : nil)
+                    .frame(maxWidth: hasLyrics ? 300 : .infinity)
                 }
-                if engine.lyricsEnabled && engine.lines.isEmpty {
-                    Text(engine.status).font(.caption).opacity(0.5)
+                if hasLyrics {
+                    LyricsStyleHost(engine: engine, t: engine.currentTime, palette: engine.palette, clock: clock)
+                        .shadow(color: Color.black.opacity(0.6), radius: 8)
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.spring(response: 0.75, dampingFraction: 0.82), value: hasLyrics)
+        }
+    }
+}
+
+/// A hosting view that reacts to the very first click, even when its window is not the active one
+/// (on the lock screen the player never becomes active, so sliders and buttons need this).
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+
+/// The player's own background: whichever Background you chose in Look (the desktop lyrics window is not
+/// drawn while the player is open, so the choice used to have no effect there).
+private struct PlayerBackdrop: View {
+    @ObservedObject var engine: Engine
+
+    private var moves: Bool {
+        engine.background == .animated || engine.background == .coverAnimated || engine.background == .fullArtwork
+    }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
+        Group {
+            if moves {
+                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { tl in
+                    layers(clock: tl.date.timeIntervalSinceReferenceDate)
+                }
+            } else {
+                layers(clock: 0)
+            }
+        }
+        .clipShape(shape)
+        .overlay(shape.stroke(Color.white.opacity(0.14), lineWidth: 0.8))
+    }
+
+    @ViewBuilder
+    private func layers(clock: Double) -> some View {
+        ZStack {
+            if engine.background == .transparent {
+                Rectangle().fill(.ultraThinMaterial)
+                Color.black.opacity(0.25)
+            } else {
+                BackdropView(mode: engine.background, palette: engine.palette,
+                             image: engine.albumSmall ?? engine.albumImage, clock: clock,
+                             sharp: engine.albumImage, sharpness: engine.coverSharpness,
+                             zoom: engine.coverZoom, motion: engine.coverMotion)
+                if engine.background == .fullArtwork {
+                    ArtworkFill(image: engine.albumImage, video: engine.videoURL, clock: clock)
+                }
+                Color.black.opacity(0.18)       // keeps the white controls readable on bright covers
+            }
         }
     }
 }
