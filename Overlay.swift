@@ -17,6 +17,7 @@ final class OverlayController {
     private var top: OverlayWindow?
     private var desk: OverlayWindow?
     private var widget: NSPanel?
+    private var lockAttached = false
     private unowned let engine: Engine
 
     init(engine: Engine) { self.engine = engine }
@@ -46,6 +47,12 @@ final class OverlayController {
             return
         }
         let topFull: Bool = engine.isLocked || engine.lyricsAboveApps || engine.previewing
+        // Windows moved above the lock screen lose their "every desktop" membership; rebuild them after unlocking.
+        if !engine.isLocked && lockAttached {
+            top?.close(); top = nil
+            widget?.close(); widget = nil
+            lockAttached = false
+        }
 
         if topFull || engine.edgeLight {
             if top == nil { top = makeWindow(on: screen, role: .top) }
@@ -53,19 +60,19 @@ final class OverlayController {
             // Only the lock screen needs the very top.
             top?.level = engine.isLocked ? NSWindow.Level(rawValue: Int(Int32.max - 2))
                                          : NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)) - 1)
-            top?.setFrame(screen.frame, display: true)
-            top?.orderFrontRegardless()
-            if let w = top { LockScreenLayer.shared.attach(w) }
+            if top?.frame != screen.frame { top?.setFrame(screen.frame, display: true) }
+            if top?.isVisible != true { top?.orderFrontRegardless() }
+            if engine.isLocked, let w = top { LockScreenLayer.shared.attach(w); lockAttached = true }
         } else {
             top?.orderOut(nil)
         }
 
         // The desktop layer also draws the chosen Background behind the player (the player itself stays see-through).
-        let wantsDesk: Bool = !topFull && ((engine.lyricsEnabled && !engine.lines.isEmpty) || engine.background != .transparent)
+        let wantsDesk: Bool = !topFull && ((engine.lyricsEnabled && !engine.lines.isEmpty) || engine.background != .transparent || (engine.artwork.isCard && engine.track != nil))
         if wantsDesk {
             if desk == nil { desk = makeWindow(on: screen, role: .desk) }
-            desk?.setFrame(screen.frame, display: true)
-            desk?.orderFront(nil)
+            if desk?.frame != screen.frame { desk?.setFrame(screen.frame, display: true) }
+            if desk?.isVisible != true { desk?.orderFront(nil) }
         } else {
             desk?.orderOut(nil)
         }
@@ -104,9 +111,10 @@ final class OverlayController {
         }
         let f = screen.frame
         let y: CGFloat = f.minY + f.height * CGFloat(engine.widgetFraction)
-        widget?.setFrame(NSRect(x: f.midX - size.width / 2, y: y, width: size.width, height: size.height), display: true)
-        widget?.orderFrontRegardless()
-        if let w = widget { LockScreenLayer.shared.attach(w) }
+        let wf = NSRect(x: f.midX - size.width / 2, y: y, width: size.width, height: size.height)
+        if widget?.frame != wf { widget?.setFrame(wf, display: true) }
+        if widget?.isVisible != true { widget?.orderFrontRegardless() }
+        if engine.isLocked, let w = widget { LockScreenLayer.shared.attach(w); lockAttached = true }
         engine.library.refreshState()
     }
 }
@@ -157,18 +165,39 @@ struct LyricsOverlayView: View {
                 ArtworkFill(image: engine.albumImage, video: engine.videoURL, clock: clock)
             }
             GeometryReader { g in
-                HStack(spacing: 0) {
-                    if engine.artwork.isCard && !engine.playerHostsLyrics {     // the player carries its own card
-                        ArtworkCard(image: engine.albumImage, video: engine.videoURL,
-                                    animated: engine.artwork == .animated, glow: palette.highlight, clock: clock)
-                            .frame(width: g.size.width * 0.32, height: g.size.height)
+                if showsLyrics && engine.lines.isEmpty, let tr = engine.track {
+                    // No lyrics for this song: the cover in the middle with the name under it, nothing else.
+                    let side: CGFloat = min(g.size.height * 0.5, g.size.width * 0.3)
+                    VStack(spacing: 18) {
+                        if engine.artwork.isCard {
+                            ArtworkCard(image: engine.albumImage, video: engine.videoURL,
+                                        animated: engine.artwork == .animated, glow: palette.highlight, clock: clock)
+                                .frame(width: side, height: side)
+                        }
+                        VStack(spacing: 4) {
+                            Text(tr.title).font(.system(size: 30, weight: .semibold)).lineLimit(2)
+                            Text(tr.artist).font(.system(size: 19)).opacity(0.7).lineLimit(1)
+                        }
+                        .foregroundColor(.white)
+                        .shadow(color: Color.black.opacity(0.6), radius: 8)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: g.size.width * 0.5)
                     }
-                    if showsLyrics {
-                        LyricsStyleHost(engine: engine, t: t, palette: palette, clock: clock)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .shadow(color: Color.black.opacity(engine.background == .transparent ? 0.65 : 0), radius: 8)
-                    } else {
-                        Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    HStack(spacing: 0) {
+                        if engine.artwork.isCard && !engine.playerHostsLyrics {     // the player carries its own card
+                            ArtworkCard(image: engine.albumImage, video: engine.videoURL,
+                                        animated: engine.artwork == .animated, glow: palette.highlight, clock: clock)
+                                .frame(width: g.size.width * 0.32, height: g.size.height)
+                        }
+                        if showsLyrics {
+                            LyricsStyleHost(engine: engine, t: t, palette: palette, clock: clock)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .shadow(color: Color.black.opacity(engine.background == .transparent ? 0.65 : 0), radius: 8)
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
             }

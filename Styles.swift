@@ -94,8 +94,8 @@ enum LyricStyle: String, CaseIterable, Identifiable {
     }
 
     /// Styles "Random per song" chooses from.
-    static let randomPool: [LyricStyle] = [.stack, .stackVisual, .electric, .fisheye, .fisheyeVisual, .ship,
-                                           .smooth, .spotlight, .karaoke, .neon, .bounce, .visual, .constellation, .sway]
+    static let randomPool: [LyricStyle] = [.stack, .electric, .fisheye, .ship,
+                                           .smooth, .spotlight, .karaoke, .neon, .bounce, .constellation, .sway]
 
     var usesIcons: Bool { self == .visual || self == .fisheyeVisual || self == .stackVisual }
 
@@ -180,7 +180,13 @@ struct GlyphView: View {
     var body: some View {
         switch glyph {
         case .symbol(let name):
-            Image(systemName: name).font(.system(size: size, weight: .bold))
+            // Every picture gets its own colour (heart red, flame orange, ...), with a soft glow, instead of one flat tint.
+            let tint: Color = WordGlyphs.tint(for: name)
+            Image(systemName: name)
+                .font(.system(size: size, weight: .bold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(tint)
+                .shadow(color: tint.opacity(0.55), radius: size * 0.22)
         case .emoji(let e):
             Text(e).font(.system(size: size))
         }

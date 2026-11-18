@@ -9,7 +9,27 @@ enum Glyph {
 /// Add your own by appending to the `add(...)` calls below.
 enum WordGlyphs {
     static func glyph(for raw: String) -> Glyph? {
-        table[normalize(raw)]
+        // Only clean SF Symbols: the emoji entries made the lyrics look cheap, so they are skipped.
+        guard let g = table[normalize(raw)] else { return nil }
+        if case .emoji = g { return nil }
+        return g
+    }
+
+    /// Colour of each picture.
+    static func tint(for symbol: String) -> Color {
+        switch symbol {
+        case "heart.fill", "flame.fill", "gift.fill", "flag.fill", "bell.fill": return Color(red: 1.0, green: 0.32, blue: 0.38)
+        case "sun.max.fill", "star.fill", "sparkles", "crown.fill", "key.fill", "bolt.fill", "lightbulb.fill": return Color(red: 1.0, green: 0.8, blue: 0.2)
+        case "moon.fill", "moon.stars.fill", "moon.zzz.fill", "bed.double.fill": return Color(red: 0.62, green: 0.6, blue: 1.0)
+        case "cloud.fill", "snowflake", "wind", "umbrella.fill", "cloud.rain.fill", "drop.fill", "water.waves": return Color(red: 0.45, green: 0.78, blue: 1.0)
+        case "leaf.fill", "tree.fill", "camera.macro", "mountain.2.fill": return Color(red: 0.4, green: 0.88, blue: 0.5)
+        case "globe", "airplane", "car.fill", "house.fill", "phone.fill", "message.fill", "bird.fill": return Color(red: 0.35, green: 0.7, blue: 1.0)
+        case "music.note", "guitars.fill", "mic.fill", "headphones", "figure.dance": return Color(red: 0.9, green: 0.45, blue: 1.0)
+        case "eye.fill", "hand.raised.fill", "figure.run", "figure.walk", "pawprint.fill": return Color(red: 1.0, green: 0.6, blue: 0.3)
+        case "clock.fill", "lock.fill", "camera.fill", "cup.and.saucer.fill", "wineglass.fill", "dollarsign.circle.fill", "diamond.fill":
+            return Color(red: 0.95, green: 0.85, blue: 0.7)
+        default: return .white
+        }
     }
 
     private static func normalize(_ s: String) -> String {
@@ -34,6 +54,28 @@ enum WordGlyphs {
         add(["fear", "scared", "afraid", "terror"], .emoji("😨"))
         add(["alone", "lonely", "lonesome"], .emoji("🥀"))
         add(["hurt", "hurts", "pain", "wound", "wounds"], .emoji("🩹"))
+        add(["crown", "king", "queen", "royal"], .emoji("👑"))
+        add(["camera", "picture", "pictures", "photograph"], .emoji("📷"))
+        add(["mirror"], .emoji("🪞"))
+        add(["book", "books", "page", "pages", "story"], .emoji("📖"))
+        add(["write", "wrote", "writing", "pen"], .emoji("✍️"))
+
+        // People & beliefs
+        add(["angel", "angels", "heaven"], .emoji("😇"))
+        add(["devil", "hell", "demon", "demons"], .emoji("😈"))
+        add(["god", "pray", "prayer", "praying", "church", "lord", "holy"], .emoji("🙏"))
+        add(["ghost", "ghosts", "haunted"], .emoji("👻"))
+        add(["death", "dead", "die", "dying", "died", "kill", "killed"], .emoji("💀"))
+        add(["grave", "graves"], .emoji("⚰️"))
+        add(["war", "fight", "fighting", "battle", "sword"], .emoji("⚔️"))
+        add(["girl", "girls", "woman", "women", "lady"], .emoji("👧"))
+        add(["boy", "boys", "man", "men", "guy"], .emoji("👦"))
+        add(["mama", "mother", "mom", "mommy"], .emoji("👩"))
+        add(["daddy", "father", "dad"], .emoji("👨"))
+        add(["friend", "friends", "friendship"], .emoji("🤝"))
+        add(["family", "children", "kids", "child"], .emoji("👪"))
+        add(["ring", "wedding", "marry", "married"], .emoji("💍"))
+        // Coloured symbols win over any older entry above.
         add(["dream", "dreams", "dreaming", "dreamed"], .emoji("💭"))
         add(["sleep", "sleeping", "asleep", "bed", "tired"], .emoji("😴"))
         add(["crazy", "wild", "insane"], .emoji("🤪"))
@@ -125,27 +167,27 @@ enum WordGlyphs {
         add(["gift", "present"], .symbol("gift.fill"))
         add(["bell", "bells", "ring"], .symbol("bell.fill"))
         add(["flag"], .symbol("flag.fill"))
-        add(["crown", "king", "queen", "royal"], .emoji("👑"))
-        add(["camera", "picture", "pictures", "photograph"], .emoji("📷"))
-        add(["mirror"], .emoji("🪞"))
-        add(["book", "books", "page", "pages", "story"], .emoji("📖"))
-        add(["write", "wrote", "writing", "pen"], .emoji("✍️"))
-
-        // People & beliefs
-        add(["angel", "angels", "heaven"], .emoji("😇"))
-        add(["devil", "hell", "demon", "demons"], .emoji("😈"))
-        add(["god", "pray", "prayer", "praying", "church", "lord", "holy"], .emoji("🙏"))
-        add(["ghost", "ghosts", "haunted"], .emoji("👻"))
-        add(["death", "dead", "die", "dying", "died", "kill", "killed"], .emoji("💀"))
-        add(["grave", "graves"], .emoji("⚰️"))
-        add(["war", "fight", "fighting", "battle", "sword"], .emoji("⚔️"))
-        add(["girl", "girls", "woman", "women", "lady"], .emoji("👧"))
-        add(["boy", "boys", "man", "men", "guy"], .emoji("👦"))
-        add(["mama", "mother", "mom", "mommy"], .emoji("👩"))
-        add(["daddy", "father", "dad"], .emoji("👨"))
-        add(["friend", "friends", "friendship"], .emoji("🤝"))
-        add(["family", "children", "kids", "child"], .emoji("👪"))
-        add(["ring", "wedding", "marry", "married"], .emoji("💍"))
+        add(["dream", "dreams", "dreaming", "sleep", "sleeping", "asleep"], .symbol("moon.zzz.fill"))
+        add(["money", "dollar", "dollars", "cash", "rich", "paid"], .symbol("dollarsign.circle.fill"))
+        add(["king", "queen", "crown", "kingdom", "royal"], .symbol("crown.fill"))
+        add(["diamond", "diamonds", "jewel", "gold", "golden"], .symbol("diamond.fill"))
+        add(["rose", "roses", "flower", "flowers", "garden"], .symbol("camera.macro"))
+        add(["tree", "trees", "forest", "woods"], .symbol("tree.fill"))
+        add(["mountain", "mountains", "hill", "hills"], .symbol("mountain.2.fill"))
+        add(["water", "ocean", "sea", "wave", "waves", "river", "swim", "drown", "drowning"], .symbol("water.waves"))
+        add(["drop", "drops", "rain", "raindrop"], .symbol("drop.fill"))
+        add(["bird", "birds", "fly", "flying", "flew", "wings", "wing"], .symbol("bird.fill"))
+        add(["dance", "dancing", "danced", "dancer"], .symbol("figure.dance"))
+        add(["guitar", "guitars"], .symbol("guitars.fill"))
+        add(["microphone", "mic", "voice", "voices"], .symbol("mic.fill"))
+        add(["headphones", "listen", "listening"], .symbol("headphones"))
+        add(["bed", "bedroom", "pillow"], .symbol("bed.double.fill"))
+        add(["umbrella"], .symbol("umbrella.fill"))
+        add(["dog", "dogs", "cat", "cats", "puppy", "kitten"], .symbol("pawprint.fill"))
+        add(["camera", "photo", "photograph", "picture", "pictures"], .symbol("camera.fill"))
+        add(["coffee", "tea"], .symbol("cup.and.saucer.fill"))
+        add(["wine", "drink", "drinks", "drinking", "drunk", "champagne"], .symbol("wineglass.fill"))
+        add(["idea", "ideas", "think", "thinking", "thought", "mind"], .symbol("lightbulb.fill"))
         return t
     }()
 }

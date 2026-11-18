@@ -68,7 +68,6 @@ struct SettingsView: View {
             }
             HStack(spacing: 6) {
                 quick("Edge light", "rectangle.dashed", $engine.edgeLight)
-                quick("Clock", "clock", $engine.showClock)
                 quick("Dock icon", "app.badge", $engine.dockIcon)
             }
         }
@@ -392,7 +391,6 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
         }
         if engine.liveWallpaper {
-            Toggle("Big clock on the wallpaper", isOn: $engine.showClock)
         }
         Toggle("Dock icon: cover with a beating ring", isOn: $engine.dockIcon)
         Toggle("Full player on the lock screen", isOn: $engine.showLockPlayer)

@@ -31,7 +31,6 @@ final class DesktopController {
     private var wallpaperShown = false
     private var wallpaperHideTask: Task<Void, Never>?
     private var lockShown = false
-    private var clockWindow: NSWindow?
 
     init(engine: Engine) { self.engine = engine }
 
@@ -107,9 +106,14 @@ final class DesktopController {
             if let t = engine.track { engine.library.trackChanged(t) }
             engine.library.start()
         } else {
-            updatePlayerLevel()
-            if !engine.playerOpen {
-                player?.orderOut(nil)
+            // Putting a window above the lock screen changes which desktops it belongs to. After unlocking, start
+            // from a fresh window so the player appears on every desktop again.
+            player?.orderOut(nil)
+            player?.close()
+            player = nil
+            if engine.playerOpen {
+                showPlayer()
+            } else {
                 engine.library.stop()
             }
         }
@@ -128,30 +132,6 @@ final class DesktopController {
             w.level = .floating
             w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
-    }
-
-    // MARK: Big clock (its own window, so it does not depend on the wallpaper or on music playing)
-
-    func syncClock() {
-        guard engine.showClock, let screen = NSScreen.main ?? NSScreen.screens.first else {
-            clockWindow?.orderOut(nil)
-            return
-        }
-        if clockWindow == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 320), styleMask: [.borderless], backing: .buffered, defer: false)
-            w.isOpaque = false
-            w.backgroundColor = .clear
-            w.hasShadow = false
-            w.ignoresMouseEvents = true
-            w.isReleasedWhenClosed = false
-            w.level = NSWindow.Level(rawValue: Self.desktopLevel + 2)
-            w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-            clockWindow = w
-        }
-        clockWindow?.contentView = NSHostingView(rootView: ClockHost(engine: engine))
-        let f: NSRect = screen.frame
-        clockWindow?.setFrame(NSRect(x: f.midX - 260, y: f.maxY - 340 - 40, width: 520, height: 320), display: true)
-        clockWindow?.orderFront(nil)
     }
 
     // MARK: Live wallpaper (a window just above the real wallpaper, below desktop icons)
@@ -225,7 +205,7 @@ extension View {
     func glass(_ radius: CGFloat = 18) -> some View { modifier(GlassBackground(radius: radius)) }
 }
 
-// MARK: - Wallpaper + big clock
+// MARK: - Wallpaper
 
 struct WallpaperView: View {
     @ObservedObject var engine: Engine
@@ -242,42 +222,6 @@ struct WallpaperView: View {
             }
         }
         .ignoresSafeArea()
-    }
-}
-
-struct ClockHost: View {
-    @ObservedObject var engine: Engine
-    var body: some View { BigClock(color: engine.palette.highlight).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top) }
-}
-
-/// Tall, thin, translucent clock with the date above it.
-struct BigClock: View {
-    let color: Color
-
-    private static let time: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm"
-        return f
-    }()
-    private static let date: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE MMM d"
-        return f
-    }()
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { tl in
-            VStack(spacing: -14) {
-                Text(Self.date.string(from: tl.date))
-                    .font(.system(size: 22, weight: .semibold))
-                    .opacity(0.65)
-                Text(Self.time.string(from: tl.date))
-                    .font(.system(size: 250, weight: .thin))
-                    .scaleEffect(x: 0.62, y: 1.0)
-                    .frame(width: 400, height: 250)
-            }
-            .foregroundColor(color.opacity(0.6))
-        }
     }
 }
 

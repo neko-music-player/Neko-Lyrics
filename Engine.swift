@@ -157,9 +157,6 @@ final class Engine: ObservableObject {
             refresh()
         }
     }
-    @Published var showClock: Bool = UserDefaults.standard.object(forKey: "showClock") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showClock, forKey: "showClock"); refresh() }
-    }
     @Published var dockIcon: Bool = UserDefaults.standard.bool(forKey: "dockIcon") {
         didSet { UserDefaults.standard.set(dockIcon, forKey: "dockIcon"); applyDock() }
     }
@@ -340,7 +337,6 @@ final class Engine: ObservableObject {
         previewing = false
         playerOpen = false
         liveWallpaper = false
-        showClock = false
         edgeLight = false
         lyricsEnabled = false
         showLockPlayer = false
@@ -417,18 +413,7 @@ final class Engine: ObservableObject {
         MenuGuard.shared.start()
         monitor.onChange = { [weak self] snap in self?.apply(snap) }
         monitor.start()
-        // macOS may put a quiet menu-bar app to sleep ("App Nap"), which stalls the timers while music is paused.
-        napBlocker = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
-                                                          reason: "Neko Lyrics keeps watching the player")
-        let ws = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
-            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.recover() }
-            }
-        }
-        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.recover() }
-        }
+        updateIdleQuit()
 
         phone.onPeerConnected = { [weak self] in
             MainActor.assumeIsolated { self?.pushToPhone(full: true) }
@@ -520,6 +505,7 @@ final class Engine: ObservableObject {
             anchorDate = Date()
         }   // else: the player couldn't be asked this time; keep the running clock instead of jumping to 0
         isPlaying = snap.isPlaying
+        updateIdleQuit()
 
         if trackChanged {
             track = snap.track
@@ -601,10 +587,12 @@ final class Engine: ObservableObject {
         if let first = embedded?.candidates.first {
             use(first, confirmed: false)
             persist(first, confirmed: false, extras: embedded?.candidates ?? [])
+            upgradeToWordTiming(for: t, key: key)
             return
         }
         if let c = savedChoice {
             use(c, confirmed: false)
+            upgradeToWordTiming(for: t, key: key)
             return
         }
 
@@ -626,6 +614,20 @@ final class Engine: ObservableObject {
                 guard !Task.isCancelled, self.currentKey == key else { return }
                 self.status = Self.describe(error)
             }
+        }
+    }
+
+    /// Lyrics that came from the file's tags or an earlier line-timed search are replaced by Apple's word-by-word
+    /// version when there is one (only if you have not confirmed a choice yourself).
+    private func upgradeToWordTiming(for t: Track, key: String) {
+        guard candidate?.lrc.range(of: "<\\d+:\\d+", options: .regularExpression) == nil else { return }
+        fetchTask?.cancel()
+        fetchTask = Task { [weak self] in
+            guard let self else { return }
+            guard let found = try? await AppleWordProvider().best(for: t), !Task.isCancelled,
+                  self.currentKey == key, !self.confirmed else { return }
+            self.use(found, confirmed: false)
+            self.persist(found, confirmed: false)
         }
     }
 
@@ -867,28 +869,32 @@ final class Engine: ObservableObject {
         phone.send(.clock(isPlaying: isPlaying, position: currentTime))
     }
 
-    private var napBlocker: NSObjectProtocol?
+    private var idleQuit: Task<Void, Never>?
 
-    /// After sleep, a screen or desktop change: windows can be dropped by macOS, so rebuild them and re-read the player.
-    private func recover() {
-        overlay.hide()
-        monitor.refreshNow()
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            self?.refresh()
+    /// Keeps the app light: when nothing has played for a minute, it quits. Start it again when you resume music.
+    private func updateIdleQuit() {
+        if isPlaying || previewing {
+            idleQuit?.cancel()
+            idleQuit = nil
+            return
+        }
+        guard idleQuit == nil else { return }
+        idleQuit = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            guard !Task.isCancelled, let self, !self.isPlaying, !self.previewing else { return }
+            NSApplication.shared.terminate(nil)
         }
     }
 
     private func refresh() {
         // While previewing, show even when paused or when "only on lock screen" is on.
         // On the lock screen things stay up when you pause, so you can press play again.
-        let visible = ((lyricsEnabled && !lines.isEmpty) || edgeLight)
+        let visible = ((lyricsEnabled && !lines.isEmpty) || edgeLight || (artwork.isCard && track != nil))
             && (previewing || ((isPlaying || isLocked) && (!lockedOnly || isLocked)))
         let lockUI: Bool = isLocked && track != nil
         if visible || lockUI { overlay.show() } else { overlay.hide() }
         desktop.syncLockPlayer(show: lockUI && showLockPlayer)
         desktop.syncWallpaper(show: liveWallpaper && isPlaying && background != .transparent)
-        desktop.syncClock()
         if visible && isPlaying { awake.enable() } else { awake.disable() }
     }
 }

@@ -19,7 +19,7 @@
 - **Desktop player.** A large glass window: a 3D album browser, your queue, search, and a player bar.
 - **Lock screen.** The same player and lyrics above the lock screen (uses a private macOS interface, see
   [Limitations](#limitations-and-honest-notes)).
-- **Edge light, live wallpaper, big clock, Dock icon ring.** All optional, all separate switches.
+- **Edge light, live wallpaper, Dock icon ring.** All optional, all separate switches.
 - **Your own lyrics.** Reads lyrics embedded in your music files, and can write the lyrics you picked back into a file.
 - **iPhone viewer.** A small companion app mirrors the lyrics over your local network.
 
@@ -55,8 +55,8 @@ System Settings > Privacy & Security.
 ## First run
 
 A fresh install turns on the visible features so you see something straight away: desktop player, live wallpaper,
-clock, edge light and lyrics, with the Poster style. Everything can be changed from the menu bar icon. The top row has
-quick switches (Player, Wallpaper, Lyrics, Edge light, Clock, Dock icon), a red **Stop everything** button and **Quit**.
+edge light and lyrics, with the Poster style. Everything can be changed from the menu bar icon. The top row has
+quick switches (Player, Wallpaper, Lyrics, Edge light, Dock icon), a red **Stop everything** button and **Quit**.
 
 ## Using the menu (three tabs)
 
@@ -221,3 +221,29 @@ catalogue and LRCLIB are third-party services with their own terms. The logo is 
 
 ## v1.5.5
 - Long pauses: the app now keeps asking the player while paused (a missed notification left it thinking nothing played), opts out of App Nap, and rebuilds its windows after sleep, wake or a screen change.
+
+## v1.5.6
+- Songs without lyrics: the album card and the song title/artist (with the lyrics status) still show, instead of an empty screen.
+
+## v1.5.7
+- After unlocking, the overlays and the player are rebuilt (windows moved above the lock screen stopped appearing on every desktop), and the lock-screen layer is only used while actually locked.
+
+## v1.5.8
+- Fixed periodic flashing: windows are no longer re-framed / re-ordered, and the clock is no longer rebuilt, on every refresh; polling stays silent when nothing changed.
+
+## v1.6.0
+- Light by design: no App Nap override, no wake/rebuild logic, no extra polling while paused.
+- The app quits by itself after music has been paused (or stopped) for a minute. Open it again when you resume.
+- The big clock is removed completely.
+
+## v1.6.1
+- Word-by-word upgrade: lyrics from a file's tags or an earlier line-timed search are swapped for Apple's word-by-word version when it exists (unless you confirmed a choice for that song).
+
+## v1.6.2
+- No more emoji in lyrics: the picture-words (Visual styles) use only clean SF Symbols, and the icon styles are left out of 'Random per song'.
+
+## v1.6.3
+- Picture-words are colour-coded SF Symbols with a soft glow (heart red, sun yellow, water blue, ...), and many more words have one.
+
+## v1.6.4
+- Songs without lyrics: the cover sits in the middle with the song and artist under it; no 'lyrics not found' text.

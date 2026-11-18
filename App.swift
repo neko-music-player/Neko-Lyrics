@@ -33,7 +33,6 @@ struct NekoLyricsApp: App {
         d.set("transparent", forKey: "background")   // nothing dimming your apps
         d.set(true, forKey: "playerOpen")
         d.set(true, forKey: "liveWallpaper")
-        d.set(true, forKey: "showClock")
         d.set(true, forKey: "edgeLight")
         d.set(true, forKey: "lyricsEnabled")
         d.set("rise", forKey: "style")
