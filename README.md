@@ -218,3 +218,6 @@ catalogue and LRCLIB are third-party services with their own terms. The logo is 
 
 ## v1.5.4
 - Sync offset slider now covers ±15 s (was ±3 s), with ±0.1 / ±1 s buttons (up to ±60 s) and a Reset.
+
+## v1.5.5
+- Long pauses: the app now keeps asking the player while paused (a missed notification left it thinking nothing played), opts out of App Nap, and rebuilds its windows after sleep, wake or a screen change.

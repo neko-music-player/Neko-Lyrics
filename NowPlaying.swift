@@ -57,11 +57,23 @@ final class NowPlayingMonitor {
         publish()
     }
 
+    private var idleTicks = 0
+
     private func resync() {
         if current == nil { bootstrap(); return }
-        guard playing else { return }
+        guard playing else {
+            // Paused: the "now playing" notification can be missed (sleep, lock, a long pause), which left the app
+            // thinking nothing was playing. Quietly ask the player every few seconds instead of trusting it.
+            idleTicks += 1
+            if idleTicks >= 3 { idleTicks = 0; bootstrap() }
+            return
+        }
+        idleTicks = 0
         publish()
     }
+
+    /// Ask again right now (after wake-up, unlock, a screen change).
+    func refreshNow() { bootstrap() }
 
     /// Ask the players what is playing right now (used at launch and while nothing is known).
     private func bootstrap() {

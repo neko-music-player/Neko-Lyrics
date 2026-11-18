@@ -417,6 +417,18 @@ final class Engine: ObservableObject {
         MenuGuard.shared.start()
         monitor.onChange = { [weak self] snap in self?.apply(snap) }
         monitor.start()
+        // macOS may put a quiet menu-bar app to sleep ("App Nap"), which stalls the timers while music is paused.
+        napBlocker = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
+                                                          reason: "Neko Lyrics keeps watching the player")
+        let ws = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.recover() }
+            }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.recover() }
+        }
 
         phone.onPeerConnected = { [weak self] in
             MainActor.assumeIsolated { self?.pushToPhone(full: true) }
@@ -853,6 +865,18 @@ final class Engine: ObservableObject {
             phone.send(.lyrics(title: track?.title ?? "", artist: track?.artist ?? "", lines: wire))
         }
         phone.send(.clock(isPlaying: isPlaying, position: currentTime))
+    }
+
+    private var napBlocker: NSObjectProtocol?
+
+    /// After sleep, a screen or desktop change: windows can be dropped by macOS, so rebuild them and re-read the player.
+    private func recover() {
+        overlay.hide()
+        monitor.refreshNow()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            self?.refresh()
+        }
     }
 
     private func refresh() {
