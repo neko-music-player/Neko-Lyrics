@@ -208,3 +208,13 @@ catalogue and LRCLIB are third-party services with their own terms. The logo is 
 
 ## v1.5.1
 - Player window buttons are one faint circle (top right) that opens on hover into: lyrics on/off, controls on/off, album browser on/off, drag lock, minimise, quit. It fades back after you move away.
+
+## v1.5.2
+- Rise style: a long line that wraps onto two rows no longer runs into the next line; neighbours are placed using the real (estimated) height of each line.
+- Smooth, Fisheye and Ship: a line too long for two rows gets a smaller font so it never runs into its neighbours.
+
+## v1.5.3
+- The player stays on every desktop (Space) again, including in the default "normal" window level.
+
+## v1.5.4
+- Sync offset slider now covers ±15 s (was ±3 s), with ±0.1 / ±1 s buttons (up to ±60 s) and a Reset.

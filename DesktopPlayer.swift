@@ -123,7 +123,7 @@ final class DesktopController {
             w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         case .normal:
             w.level = .normal
-            w.collectionBehavior = [.moveToActiveSpace]
+            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]   // follows you across desktops
         case .top:
             w.level = .floating
             w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

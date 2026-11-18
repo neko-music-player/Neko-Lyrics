@@ -322,9 +322,21 @@ struct FlowLineView: View {
     let icons: Bool
     var effect: WordEffect = .standard
     var centered = true
+    /// For styles with fixed row spacing: a line longer than `rows` rows at this width gets a smaller font, so it never spills into its neighbours.
+    var fitWidth: CGFloat = 0
+    var fitRows: Int = 0
+
+    private var fontSize: CGFloat {
+        guard fitWidth > 0, fitRows > 0 else { return size }
+        var chars: Double = 0
+        for w in line.words { chars += Double(w.text.count) + 1 }
+        let widest: Double = Double(fitWidth) * Double(fitRows) / max(chars * 0.6, 1.0)
+        return max(size * 0.45, min(size, CGFloat(widest)))
+    }
 
     var body: some View {
         let states = wordStates(line, at: t)
+        let size: CGFloat = fontSize
         FlowLayout(spacing: size * 0.3, lineSpacing: size * 0.15, centered: centered) {
             ForEach(line.words.indices, id: \.self) { i in
                 WordChip(word: line.words[i], state: states[i], t: t, palette: palette,
@@ -406,7 +418,8 @@ private struct SmoothRow: View {
         let px: CGFloat = size.width / 2
         let py: CGFloat = size.height / 2 + CGFloat(d) * rowH
 
-        let row = FlowLineView(line: line, t: t, palette: palette, size: 52, icons: false, centered: false)
+        let row = FlowLineView(line: line, t: t, palette: palette, size: 52, icons: false, centered: false,
+                                fitWidth: size.width * 0.72, fitRows: 2)
             .frame(width: size.width * 0.72, alignment: .leading)
         row
             .scaleEffect(scale, anchor: .leading)
@@ -495,7 +508,8 @@ private struct FisheyeRow: View {
         let y: CGFloat = size.height * 0.5 + CGFloat(offsetY)
         let px: CGFloat = size.width / 2
 
-        let base = FlowLineView(line: line, t: t, palette: palette, size: 46, icons: icons)
+        let base = FlowLineView(line: line, t: t, palette: palette, size: 46, icons: icons,
+                                fitWidth: size.width * 0.78, fitRows: 2)
             .frame(width: size.width * 0.78)
         base
             .scaleEffect(scale)
@@ -560,7 +574,8 @@ private struct ShipRow: View {
         let dy: CGFloat = CGFloat(d) * rowH
         let alpha: Double = 1.0 - min(ad / 6.0, 0.8)
 
-        let base = FlowLineView(line: line, t: t, palette: palette, size: fontSize, icons: icons)
+        let base = FlowLineView(line: line, t: t, palette: palette, size: fontSize, icons: icons,
+                                fitWidth: width * 0.82, fitRows: 2)
             .frame(width: width * 0.82)
         base
             .scaleEffect(scale)
@@ -985,13 +1000,48 @@ struct RiseStyleView: View {
     let t: TimeInterval
     let palette: Palette
 
+    private static func scale(_ rel: Int) -> Double { rel == 0 ? 1.0 : (rel == 1 ? 0.7 : 0.8) }
+    private static func fontSize(_ rel: Int) -> Double { rel == 0 ? 78.0 : 56.0 }
+
+    /// How tall a line really is: a long line wraps onto two or three rows, and the neighbours must make room.
+    private static func height(_ line: Line, rel: Int, width: Double) -> Double {
+        let size: Double = fontSize(rel)
+        var chars: Double = 0
+        for w in line.words { chars += Double(w.text.count) + 1 }
+        let perRow: Double = max(1.0, width * 0.82 / (size * 0.54))
+        let rows: Double = max(1.0, (chars / perRow).rounded(.up))
+        return rows * size * 1.2 * scale(rel)
+    }
+
     var body: some View {
         let lines = engine.lines
         if let li = engine.lineIndex(at: t) {
             GeometryReader { geo in
+                let w: Double = Double(geo.size.width)
+                let gap: Double = Double(geo.size.height) * 0.03
+                let range: ClosedRange<Int> = max(0, li - 2)...min(lines.count - 1, li + 1)
+                // Rows are stacked from the current line outwards using their real heights.
+                let curH: Double = Self.height(lines[li], rel: 0, width: w)
+                let offsets: [Int: Double] = {
+                    var o: [Int: Double] = [0: 0]
+                    var edge: Double = -curH / 2
+                    var k: Int = -1
+                    while li + k >= max(0, li - 2) {
+                        let h: Double = Self.height(lines[li + k], rel: k, width: w)
+                        o[k] = edge - gap - h / 2
+                        edge = edge - gap - h
+                        k -= 1
+                    }
+                    if li + 1 < lines.count {
+                        let h: Double = Self.height(lines[li + 1], rel: 1, width: w)
+                        o[1] = curH / 2 + gap + h / 2
+                    }
+                    return o
+                }()
                 ZStack {
-                    ForEach(max(0, li - 2)...min(lines.count - 1, li + 1), id: \.self) { i in
-                        RiseRow(line: lines[i], t: t, palette: palette, rel: i - li, size: geo.size)
+                    ForEach(range, id: \.self) { i in
+                        RiseRow(line: lines[i], t: t, palette: palette, rel: i - li, size: geo.size,
+                                baseY: offsets[i - li] ?? 0)
                     }
                 }
             }
@@ -1005,6 +1055,7 @@ private struct RiseRow: View {
     let palette: Palette
     let rel: Int            // -2, -1 = already sung, 0 = now, 1 = next
     let size: CGSize
+    let baseY: Double       // where the row rests, already making room for wrapped lines
 
     private struct Look { var y = 0.0; var alpha = 1.0; var blur = 0.0; var scale = 1.0 }
 
@@ -1021,13 +1072,11 @@ private struct RiseRow: View {
             l.alpha = ease
             l.blur = (1.0 - ease) * 10.0
         case 1:
-            l.y = rowH * 1.3
             l.alpha = 0.35
             l.blur = 3.0
             l.scale = 0.7
         default:
             let up: Double = Double(-rel)
-            l.y = -rowH * up * 1.1
             l.alpha = max(0.0, 0.55 - up * 0.25)
             l.blur = up * 3.0
             l.scale = 0.8
@@ -1042,7 +1091,7 @@ private struct RiseRow: View {
             .scaleEffect(CGFloat(l.scale))
             .blur(radius: CGFloat(l.blur))
             .opacity(l.alpha)
-            .position(x: size.width / 2, y: size.height / 2 + CGFloat(l.y))
+            .position(x: size.width / 2, y: size.height / 2 + CGFloat(baseY + l.y))
     }
 }
 

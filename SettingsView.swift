@@ -249,7 +249,18 @@ struct SettingsView: View {
             Text("Lyrics late? Move right. Lyrics early? Move left.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Slider(value: $engine.offset, in: -3...3, step: 0.05)
+            Slider(value: $engine.offset, in: -15...15, step: 0.05)
+            HStack(spacing: 6) {
+                Button("−1s") { engine.offset = max(-60, engine.offset - 1) }
+                Button("−0.1") { engine.offset = max(-60, engine.offset - 0.1) }
+                Button("Reset") { engine.offset = 0 }
+                Button("+0.1") { engine.offset = min(60, engine.offset + 0.1) }
+                Button("+1s") { engine.offset = min(60, engine.offset + 1) }
+            }
+            .font(.caption)
+            Text("The slider covers ±15 s; the buttons go up to ±60 s.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 
