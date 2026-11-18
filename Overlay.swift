@@ -516,10 +516,54 @@ struct VideoLoopView: NSViewRepresentable {
     }
 }
 
+/// One decoder per video, however many places show it (background, card, wallpaper). Paused whenever music is.
+@MainActor
+final class VideoHub {
+    static let shared = VideoHub()
+    private struct Entry { let player: AVQueuePlayer; let looper: AVPlayerLooper; var users: Int }
+    private var entries: [URL: Entry] = [:]
+    private var playing = true
+
+    func acquire(_ url: URL) -> AVQueuePlayer {
+        if var e = entries[url] {
+            e.users += 1
+            entries[url] = e
+            return e.player
+        }
+        let q = AVQueuePlayer()
+        q.isMuted = true
+        q.automaticallyWaitsToMinimizeStalling = false
+        q.preventsDisplaySleepDuringVideoPlayback = false
+        let item = AVPlayerItem(url: url)
+        item.preferredMaximumResolution = CGSize(width: 1280, height: 720)     // a backdrop never needs more
+        let looper = AVPlayerLooper(player: q, templateItem: item)
+        entries[url] = Entry(player: q, looper: looper, users: 1)
+        if playing { q.play() }
+        return q
+    }
+
+    func release(_ url: URL) {
+        guard var e = entries[url] else { return }
+        e.users -= 1
+        if e.users <= 0 {
+            e.looper.disableLooping()
+            e.player.pause()
+            e.player.removeAllItems()
+            entries[url] = nil
+        } else {
+            entries[url] = e
+        }
+    }
+
+    func setPlaying(_ on: Bool) {
+        playing = on
+        for e in entries.values { on ? e.player.play() : e.player.pause() }
+    }
+}
+
 final class LoopingPlayerView: NSView {
     private(set) var url: URL
-    private var queue: AVQueuePlayer?
-    private var looper: AVPlayerLooper?
+    private var held: URL?
     private let playerLayer = AVPlayerLayer()
 
     init(url: URL) {
@@ -535,13 +579,27 @@ final class LoopingPlayerView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func load(_ newURL: URL) {
-        url = newURL
-        let q = AVQueuePlayer()
-        q.isMuted = true
-        looper = AVPlayerLooper(player: q, templateItem: AVPlayerItem(url: newURL))
-        queue = q
-        playerLayer.player = q
-        q.play()
+        MainActor.assumeIsolated {
+            if let old = held { VideoHub.shared.release(old) }
+            url = newURL
+            held = newURL
+            playerLayer.player = VideoHub.shared.acquire(newURL)
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Windows that are hidden or gone must not keep a decoder alive.
+        MainActor.assumeIsolated {
+            if window == nil, let old = held {
+                playerLayer.player = nil
+                VideoHub.shared.release(old)
+                held = nil
+            } else if window != nil, held == nil {
+                held = url
+                playerLayer.player = VideoHub.shared.acquire(url)
+            }
+        }
     }
 
     override func layout() {

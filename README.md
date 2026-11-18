@@ -247,3 +247,6 @@ catalogue and LRCLIB are third-party services with their own terms. The logo is 
 
 ## v1.6.4
 - Songs without lyrics: the cover sits in the middle with the song and artist under it; no 'lyrics not found' text.
+
+## v1.6.5
+- Video backgrounds: one shared decoder per video (was one per place it was shown), capped at 720p, paused while music is paused, released when its window is gone.

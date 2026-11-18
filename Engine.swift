@@ -505,6 +505,7 @@ final class Engine: ObservableObject {
             anchorDate = Date()
         }   // else: the player couldn't be asked this time; keep the running clock instead of jumping to 0
         isPlaying = snap.isPlaying
+        VideoHub.shared.setPlaying(snap.isPlaying)
         updateIdleQuit()
 
         if trackChanged {
