@@ -317,7 +317,7 @@ final class Engine: ObservableObject {
     }
 
     /// Cover art is fetched when colors, the backdrop, the artwork or the music widget want it.
-    var needsArtwork: Bool { autoSync || edgeLight || background.usesCover || showWidget || artwork != .none || liveWallpaper || playerOpen || dockIcon || showLockPlayer }
+    var needsArtwork: Bool { autoSync || edgeLight || background.usesCover || showWidget || artwork != .none || liveWallpaper || playerOpen || dockIcon || showLockPlayer || phoneConnected }
 
     /// True while the glass player is on screen and carries the lyrics itself (desktop or lock screen).
     var playerHostsLyrics: Bool {
@@ -416,7 +416,12 @@ final class Engine: ObservableObject {
         updateIdleQuit()
 
         phone.onPeerConnected = { [weak self] in
-            MainActor.assumeIsolated { self?.pushToPhone(full: true) }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.phoneConnected = true
+                if self.albumImage == nil, let t = self.track { self.loadArtwork(for: t) }
+                self.pushToPhone(full: true)
+            }
         }
         phone.start()
 
@@ -556,6 +561,7 @@ final class Engine: ObservableObject {
             self.albumImage = image
             self.albumSmall = image.map { AlbumArt.small($0) }
             self.albumPalette = image.flatMap { AlbumArt.palette(from: $0) }
+            self.pushArtToPhone()
         }
     }
 
@@ -859,6 +865,26 @@ final class Engine: ObservableObject {
 
     // MARK: - Phone + overlay
 
+    private var phoneConnected = false
+
+    private func rgb(_ c: Color) -> [Double] {
+        let n = NSColor(c).usingColorSpace(.sRGB) ?? NSColor.white
+        return [Double(n.redComponent), Double(n.greenComponent), Double(n.blueComponent)]
+    }
+
+    /// Sends the cover and its colours to the phone viewer (about 30 KB).
+    private func pushArtToPhone() {
+        guard phoneConnected, let image = albumImage, let palette = albumPalette else { return }
+        let side: CGFloat = 400
+        let small = NSImage(size: NSSize(width: side, height: side))
+        small.lockFocus()
+        image.draw(in: NSRect(x: 0, y: 0, width: side, height: side), from: .zero, operation: .copy, fraction: 1)
+        small.unlockFocus()
+        guard let tiff = small.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+              let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) else { return }
+        phone.send(.art(jpeg: jpeg, highlight: rgb(palette.highlight), a: rgb(palette.backdropA), b: rgb(palette.backdropB)))
+    }
+
     private func pushToPhone(full: Bool) {
         if full {
             let wire = lines.map { line in
@@ -866,6 +892,7 @@ final class Engine: ObservableObject {
                          start: line.start)
             }
             phone.send(.lyrics(title: track?.title ?? "", artist: track?.artist ?? "", lines: wire))
+            pushArtToPhone()
         }
         phone.send(.clock(isPlaying: isPlaying, position: currentTime))
     }

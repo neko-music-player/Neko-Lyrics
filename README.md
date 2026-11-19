@@ -144,13 +144,12 @@ the current list; clicking a song plays it.
 - Spotify does not share its queue, so the queue panel is for the Music app.
 - Word timing from the estimate is a guess; real timing comes from the Apple Music sheets or from enhanced LRC files.
 - The Apple lyrics catalogue is an unofficial third-party service and can change or disappear; LRCLIB is the fallback.
-- This project was written without being able to compile or run it on a Mac. Expect to fix the occasional build error;
-  the Swift type checker can time out on a long expression, and splitting it into typed pieces fixes that.
-
 ## iPhone viewer
 
-`iOS/` holds a small SwiftUI app. Create an iOS app target in Xcode, add those three files, and add the Local Network
-usage description plus Bonjour services `_nekolyrics._tcp` and `_nekolyrics._udp`. Run it on the same Wi-Fi as the Mac.
+`iOS/` holds a small SwiftUI app: blurred cover background, cover card with a glow, word-by-word colour fill and
+the previous / next line. In Xcode create an iOS app target, add `iOS/*.swift` and `Wire.swift` (the same file the Mac
+app uses), then add the Local Network usage description and Bonjour services `_nekolyrics._tcp` / `_nekolyrics._udp`.
+For the app icon drag `Assets/iOS-AppIcon-1024.png` into `Assets.xcassets > AppIcon`. Run it on the same Wi-Fi as the Mac.
 
 ## Project layout
 
@@ -250,3 +249,7 @@ catalogue and LRCLIB are third-party services with their own terms. The logo is 
 
 ## v1.6.5
 - Video backgrounds: one shared decoder per video (was one per place it was shown), capped at 720p, paused while music is paused, released when its window is gone.
+
+## v1.6.6
+- iPhone viewer redesigned (cover, blurred background, per-word fill, glow, line transitions); the Mac sends the cover and its colours to the phone. Update both apps together (`Wire.swift` changed).
+- `Assets/iOS-AppIcon-1024.png`: a full-square icon for the iPhone app.
